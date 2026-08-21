@@ -1,3 +1,6 @@
+![GitHub Downloads (specific asset, latest release)](https://img.shields.io/github/downloads/CePeU/AssetPackSwitcher/latest/AssetPackSwitcher.zip)
+![GitHub Downloads (specific asset, latest release)](https://img.shields.io/github/downloads/CePeU/AssetPackSwitcher/latest/AssetPackSwitcher_1.0.1.zip)
+
 This is a dungeondraft module based on uchideshi34(Jon) AssetSwap module.
 
 It is so far also vibe coded but it works and does it job.   
@@ -7,11 +10,12 @@ The idea this module follows is to allow for you to switch your assets from one 
 
 So far the module compares the path and name of assets to find the corresponding assets in the each pack. There might be improvements for this in the future.   
 
-You can allready bulk switch or map assets manually.   
+You can allready bulk switch your map assets manually.   
 
-You select a to/inspect pack and you can highlight all assets on that level (or collect all assets from every level) which belong to that pack by using the button "Find&Highlight".   
+You select a to/inspect pack and you can highlight all assets on that level (or collect all assets from every level) which belong to that pack by using the button "Find&Highlight".  
 
 It will list them in the list field. Clicking on an asset or asset collection in the list field will zoom you to that asset or asset collection and highlight them.   
+"Focus px" controls the zoom level. The selected assets view size will be scaled to this texture size (so standard is 256x256) and the viewport will be adjusted so that this view size is reached.
 
 The first item will be blue. Clicking again will cycle trough that specific collection if there is more than one asset.   
 
