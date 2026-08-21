@@ -1,0 +1,8 @@
+{
+    "name": "Asset Pack Switcher",
+    "unique_id": "CePeU.AssetPackSwitcher",
+    "version": "1.0.0",
+    "author": "CePeU",
+    "description": "Add feature to replace assets with other assets and switch asset packs that way.",
+    "dd_version": "1.2.0.1"
+}
