@@ -44,7 +44,7 @@ jobs:
           tag_name: ${{ needs.check-version.outputs.version }}
           prerelease: ${{ contains(needs.check-version.outputs.version, '-') }}
           files: |
-            UnofficialPatch_${{ needs.check-version.outputs.version }}.zip
-            UnofficialPatch.zip
+            AssetPackSwitcher_${{ needs.check-version.outputs.version }}.zip
+            AssetPackSwitcher.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
