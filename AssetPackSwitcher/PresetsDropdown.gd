@@ -6,11 +6,11 @@ var dropdown = null
 var group_dropdown = null
 var confirm_dialog = null
 # confirm_dialog_type can be "save" or "delete"
-var confirm_dialog_type = "save" 
+var confirm_dialog_type = "save"
 var create_new_dialog = null
 var ui_hbox = null
 var preset_config_filename = "gradientmap_presets.json"
-var unique_id = "uchideshi34.SwapAssets"
+var unique_id = "cepeu.AssetPackSwitcher"
 var preset_config_name = "Scatter Preset Configs"
 var global = null
 var save_button = null
@@ -48,10 +48,10 @@ const DEFAULT_STORE_DATA = {
 	}
 }
 
-func outputlog(msg,level=0):
+func outputlog(msg, level = 0):
 	if ENABLE_LOGGING:
 		if level <= LOGGING_LEVEL:
-			printraw("(%d) <SwapAssets-PresetsDropdown>: " % OS.get_ticks_msec())
+			printraw("(%d) <AssetPackSwitcher-PresetsDropdown>: " % OS.get_ticks_msec())
 			print(msg)
 	else:
 		pass
@@ -79,7 +79,6 @@ class DataSorter:
 
 # Function to look at resource string and return the texture
 func load_image_texture(texture_path: String):
-
 	var image = Image.new()
 	var texture = ImageTexture.new()
 
@@ -95,7 +94,6 @@ func load_image_texture(texture_path: String):
 
 # Function to see if a structure that looks like a copied dd data entry is the same
 func is_the_same(a, b) -> bool:
-
 	if a is Dictionary:
 		for key in a.keys():
 			if not b.has(key):
@@ -123,7 +121,6 @@ func is_the_same(a, b) -> bool:
 
 # Function to make and return a menu button based on a dictionary of values: "title", "icon_path", "items", "id_pressed_func", "default_index"
 func make_menu_button(container, values: Dictionary):
-
 	# Make menu selection for export types
 	var menu_button = MenuButton.new()
 	var popup = menu_button.get_popup()
@@ -135,9 +132,9 @@ func make_menu_button(container, values: Dictionary):
 	for entry in values["items"]:
 		popup.add_check_item(entry)
 	if popup.get_item_count() > 0:
-		popup.set_item_checked(values["default_index"],true)
+		popup.set_item_checked(values["default_index"], true)
 	if values["id_pressed_func"] != null:
-		popup.connect("id_pressed",self,values["id_pressed_func"],[popup])
+		popup.connect("id_pressed", self, values["id_pressed_func"], [popup])
 
 	container.add_child(menu_button)
 
@@ -145,12 +142,11 @@ func make_menu_button(container, values: Dictionary):
 
 # Function to build the UI to add and modify scatter tool presets
 func make_presets_ui(parent_node, index: int):
-
 	ui_hbox = HBoxContainer.new()
 	if parent_node != null:
 		parent_node.add_child(ui_hbox)
 		if index >= 0:
-			parent_node.move_child(ui_hbox,index)
+			parent_node.move_child(ui_hbox, index)
 
 	# Make a dropdown ui for making and deleting preset lists
 	# Make a edit name button
@@ -192,7 +188,7 @@ func make_presets_ui(parent_node, index: int):
 	save_button = Button.new()
 	save_button.hint_tooltip = "Save current selected values."
 	save_button.icon = load_image_texture("res://ui/icons/menu/save.png")
-	save_button.connect("pressed", self, "on_request_confirm_action",["save"])
+	save_button.connect("pressed", self, "on_request_confirm_action", ["save"])
 	ui_hbox.add_child(save_button)
 
 	# Make a edit name button
@@ -200,14 +196,14 @@ func make_presets_ui(parent_node, index: int):
 		duplicate_group_button = Button.new()
 		duplicate_group_button.hint_tooltip = "Duplicate this group."
 		duplicate_group_button.icon = load_image_texture("res://ui/icons/misc/copy.png")
-		duplicate_group_button.connect("pressed", self, "edit_current_preset_name",["copy"])
+		duplicate_group_button.connect("pressed", self, "edit_current_preset_name", ["copy"])
 		ui_hbox.add_child(duplicate_group_button)
 
 	# Make a delete button
 	delete_button = Button.new()
 	delete_button.hint_tooltip = "Delete this preset or group."
 	delete_button.icon = load_image_texture("icons/trash_icon.png")
-	delete_button.connect("pressed", self, "on_request_confirm_action",["delete"])
+	delete_button.connect("pressed", self, "on_request_confirm_action", ["delete"])
 	ui_hbox.add_child(delete_button)
 
 	# Clear the currently selected preset and persist an empty preset.
@@ -215,6 +211,7 @@ func make_presets_ui(parent_node, index: int):
 	# present and valid, but the selected preset contains no assignments.
 	clear_button = Button.new()
 	clear_button.text = "Clear Swap List"
+	clear_button.icon = load_image_texture("icons/cancel.png")
 	clear_button.hint_tooltip = "Clear all assignments in the currently selected preset and write the empty list to the JSON file."
 	clear_button.connect("pressed", self, "clear_current_preset")
 	ui_hbox.add_child(clear_button)
@@ -234,9 +231,8 @@ func make_presets_ui(parent_node, index: int):
 
 # Function to create the ui to import and export presets and place them into a vbox
 func make_presets_import_and_export_ui(vbox: VBoxContainer, index: int):
-
 	global.Editor.Toolset.GetToolPanel("PathTool").CreateNote("Use these buttons to import and export preset groups for use in the Gradient option of the tint colour feature.")
-	var note = global.Editor.Toolset.GetToolPanel("PathTool").Align.get_child(global.Editor.Toolset.GetToolPanel("PathTool").Align.get_child_count()-1)
+	var note = global.Editor.Toolset.GetToolPanel("PathTool").Align.get_child(global.Editor.Toolset.GetToolPanel("PathTool").Align.get_child_count() - 1)
 	global.Editor.Toolset.GetToolPanel("PathTool").Align.remove_child(note)
 
 	vbox.add_child(note)
@@ -262,16 +258,15 @@ func make_presets_import_and_export_ui(vbox: VBoxContainer, index: int):
 		vbox.move_child(export_button, index)
 
 	# Function to make and return a menu button based on a dictionary of values: "title", "icon_path", "items", "id_pressed_func", "default_index"
-	export_groups_menu_button = make_menu_button(vbox, {"title": "Select Groups To Export", "icon_path": "res://ui/icons/menu/new.png", "id_pressed_func": "on_select_check_menu_item", "default_index": 0, "items": ["Test","Test2","Test3"]})
+	export_groups_menu_button = make_menu_button(vbox, {"title": "Select Groups To Export", "icon_path": "res://ui/icons/menu/new.png", "id_pressed_func": "on_select_check_menu_item", "default_index": 0, "items": ["Test", "Test2", "Test3"]})
 	export_groups_menu_button.connect("pressed", self, "refresh_export_groups_menu_button")
 
 # Function to manage selection of the export menu button
-func on_select_check_menu_item(id,popupmenu):
-
+func on_select_check_menu_item(id, popupmenu):
 	if popupmenu.is_item_checked(id):
-		popupmenu.set_item_checked(id,false)
+		popupmenu.set_item_checked(id, false)
 	else:
-		popupmenu.set_item_checked(id,true)
+		popupmenu.set_item_checked(id, true)
 
 
 #########################################################################################################
@@ -282,7 +277,6 @@ func on_select_check_menu_item(id,popupmenu):
 
 # Function to refresh the export groups menu button with the latest group list
 func refresh_export_groups_menu_button():
-
 	var popup = export_groups_menu_button.get_popup()
 
 	# Clear the current list
@@ -292,11 +286,10 @@ func refresh_export_groups_menu_button():
 		# Create a checkable item with the group name
 		popup.add_check_item(store_data["group_data"][group_data_key]["group_name"])
 		# Add metadata for its group id using the idx as the last one
-		popup.set_item_metadata(popup.get_item_count()-1, group_data_key)
+		popup.set_item_metadata(popup.get_item_count() - 1, group_data_key)
 
 # Function to show of hide the group values
 func show_or_hide_preset_groups(button_pressed):
-
 	group_dropdown.visible = button_pressed
 	dropdown.visible = not button_pressed
 	save_button.visible = not button_pressed
@@ -306,7 +299,7 @@ func show_or_hide_preset_groups(button_pressed):
 		clear_button.visible = not button_pressed
 
 	# If group is visible then update the tooltip and display the right data in the UI
-	if button_pressed:	
+	if button_pressed:
 		show_preset_groups_button.hint_tooltip = "Show Presets in this Group."
 		on_preset_group_selected(group_dropdown.selected)
 	else:
@@ -315,7 +308,6 @@ func show_or_hide_preset_groups(button_pressed):
 
 # Function to hide the whole shebang
 func show_or_hide(make_visible: bool):
-
 	if not make_visible:
 		group_dropdown.visible = false
 		dropdown.visible = false
@@ -327,9 +319,8 @@ func show_or_hide(make_visible: bool):
 
 # On a request for action confirmation set up and launch the confirm dialog box
 func on_request_confirm_action(type: String):
-
 	# If this is none record of a preset or the add new preset value
-	if (dropdown.selected == 0 && not has_default_preset_mode && dropdown.visible) || dropdown.selected == dropdown.get_item_count()-1:
+	if (dropdown.selected == 0 && not has_default_preset_mode && dropdown.visible) || dropdown.selected == dropdown.get_item_count() - 1:
 		return
 
 	# Set the type value so the OK button takes the right action
@@ -355,7 +346,6 @@ func on_request_confirm_action(type: String):
 
 # When the OK is pressed on the action confirm dialog box then take the appropriate actions
 func on_confirm_action_ok_pressed():
-
 	match confirm_dialog_type:
 		"delete":
 			# If this is a preset then delete it
@@ -372,17 +362,15 @@ func on_confirm_action_ok_pressed():
 
 # Function to create a copy of the current group of presets
 func duplicate_current_group():
-
-	outputlog("duplicate_current_group",2)
+	outputlog("duplicate_current_group", 2)
 
 	var index = group_dropdown.selected
 	var group_id = add_new_group()
 
-	outputlog("source_group_id: " + str(group_dropdown.get_item_metadata(index)),2)
+	outputlog("source_group_id: " + str(group_dropdown.get_item_metadata(index)), 2)
 
 	# Check that the current data can be found, which should not fail
 	if store_data["group_data"].has(group_dropdown.get_item_metadata(index)):
-
 		var current_data = store_data["group_data"][group_dropdown.get_item_metadata(index)].duplicate(true)
 		outputlog("current_data: " + str(current_data))
 		if current_data.has("valid_list"):
@@ -399,7 +387,7 @@ func clear_current_preset():
 	if not dropdown.visible:
 		return
 	var index = dropdown.selected
-	if index < 0 or index >= dropdown.get_item_count()-1:
+	if index < 0 or index >= dropdown.get_item_count() - 1:
 		return
 	if index == 0 and not has_default_preset_mode:
 		return
@@ -423,11 +411,10 @@ func clear_current_preset():
 
 # Function to delete the current scatter preset
 func delete_current_preset():
-
 	var index = dropdown.selected
 
 	# Don't do anything if we are on None on the add preset choice (noting that we shouldn't be calling this if so)
-	if index == 0 || index ==  dropdown.get_item_count()-1:
+	if index == 0 || index == dropdown.get_item_count() - 1:
 		return
 	
 	# Return to the none entry
@@ -440,25 +427,24 @@ func delete_current_preset():
 
 # Function to delete the current scatter preset
 func delete_current_preset_group():
-
-	outputlog("delete_current_preset_group",2)
+	outputlog("delete_current_preset_group", 2)
 
 	var index = group_dropdown.selected
 
 	# Don't do anything if we are on None on the add preset choice (noting that we shouldn't be calling this if so)
-	if group_dropdown.get_item_count() == 2 || index == group_dropdown.get_item_count()-1:
+	if group_dropdown.get_item_count() == 2 || index == group_dropdown.get_item_count() - 1:
 		return
 	
 	# Return to the none entry
 	group_dropdown.select(0)
 	on_preset_group_selected(0)
 
-	outputlog("store_data: " + str(store_data),2)
+	outputlog("store_data: " + str(store_data), 2)
 
 	# Remove the data from the store data
 	store_data["group_data"].erase(group_dropdown.get_item_metadata(index))
 
-	outputlog("store_data: " + str(store_data),2)
+	outputlog("store_data: " + str(store_data), 2)
 
 	# Remove from the UI
 	group_dropdown.remove_item(index)
@@ -468,16 +454,15 @@ func delete_current_preset_group():
 
 # When the OK button is pressed on the preset name dialog then either create a new preset or rename the existing one
 func on_preset_dialogbox_ok_pressed():
-
-	outputlog("on_preset_dialogbox_ok_pressed",2)
+	outputlog("on_preset_dialogbox_ok_pressed", 2)
 
 	# If we are editing a preset name then
 	if dropdown.visible:
 		# If we are making a new preset then
-		if dropdown.selected == dropdown.get_item_count()-1:
-			outputlog("is add new preset",2)
+		if dropdown.selected == dropdown.get_item_count() - 1:
+			outputlog("is add new preset", 2)
 			# Set the current item to have the text of the windows lineedit value
-			dropdown.set_item_text(dropdown.selected,editname_window.find_node("PresetNameEdit").text)
+			dropdown.set_item_text(dropdown.selected, editname_window.find_node("PresetNameEdit").text)
 			# Add a new entry for Add New Preset - noting we simply check for the last one when adding a new entry so this is fine
 			dropdown.add_item("Add New Preset")
 			# Save it to populate all the values
@@ -486,14 +471,14 @@ func on_preset_dialogbox_ok_pressed():
 		# If we are editing an existing preset
 		elif dropdown.selected != 0:
 			# Set the current item to have the text of the windows lineedit value
-			dropdown.set_item_text(dropdown.selected,editname_window.find_node("PresetNameEdit").text)
+			dropdown.set_item_text(dropdown.selected, editname_window.find_node("PresetNameEdit").text)
 	# If this is a preset group 
 	else:
-		outputlog("edit_type: " + str(editname_window.get_meta("edit_type")),2)
+		outputlog("edit_type: " + str(editname_window.get_meta("edit_type")), 2)
 		match editname_window.get_meta("edit_type"):
 			"default":
 				# If we are making a new group then
-				if group_dropdown.selected == group_dropdown.get_item_count()-1:
+				if group_dropdown.selected == group_dropdown.get_item_count() - 1:
 					# Reset the dropdown so we don't save those values into the new group
 					reset_dropdown()
 					# Add a new group to the end of the list
@@ -502,33 +487,32 @@ func on_preset_dialogbox_ok_pressed():
 				# If we are editing an existing preset
 				else:
 					# Set the current item to have the text of the windows lineedit value
-					group_dropdown.set_item_text(group_dropdown.selected,editname_window.find_node("PresetNameEdit").text)
+					group_dropdown.set_item_text(group_dropdown.selected, editname_window.find_node("PresetNameEdit").text)
 					store_data["group_data"][group_dropdown.get_item_metadata(group_dropdown.selected)]["group_name"] = editname_window.find_node("PresetNameEdit").text
 			"copy":
 				duplicate_current_group()
 				# Select the newly created group whic is the penultimate one
-				group_dropdown.selected = group_dropdown.get_item_count()-2
+				group_dropdown.selected = group_dropdown.get_item_count() - 2
 				store_data["group_data"][group_dropdown.get_item_metadata(group_dropdown.selected)]["group_name"] = editname_window.find_node("PresetNameEdit").text
-				on_preset_group_selected(group_dropdown.get_item_count()-2)	
+				on_preset_group_selected(group_dropdown.get_item_count() - 2)
 
 		_save_preset_config_file()
 
 # Function to add a new empty group with the name from the edit window
 func add_new_group() -> String:
-
 	# Set the index to the last value in the group
-	var index = group_dropdown.get_item_count()-1
+	var index = group_dropdown.get_item_count() - 1
 
-	outputlog("add_new_group: " + str(index),2)
+	outputlog("add_new_group: " + str(index), 2)
 
 	# Set the current item to have the text of the windows lineedit value
-	group_dropdown.set_item_text(index,editname_window.find_node("PresetNameEdit").text)
+	group_dropdown.set_item_text(index, editname_window.find_node("PresetNameEdit").text)
 	# Add a new entry for Add New Preset - noting we simply check for the last one when adding a new entry so this is fine
 	group_dropdown.add_item("Add New Group")
 	# Create a new group id
 	var group_id = get_new_group_id()
 	# Set it as the dropdown metadata
-	group_dropdown.set_item_metadata(index,group_id)
+	group_dropdown.set_item_metadata(index, group_id)
 	# Add a group id record to the store data
 	store_data["group_data"][group_id] = {}
 	store_data["group_data"][group_id]["valid_list"] = []
@@ -539,44 +523,41 @@ func add_new_group() -> String:
 
 # Since we are using the global.Editor.SearchHasFocus to stop custom shortcut signals (for some reason the UI does this for other shortcuts), we need to set it to false when we exit the dialog
 func on_preset_dialogbox_closed():
-
 	global.Editor.SearchHasFocus = false
 	# If this is the preset view
 	if dropdown.visible:
 		# If we are selected adding a new preset but bugged out then revert to default view
-		if dropdown.selected == dropdown.get_item_count()-1:
+		if dropdown.selected == dropdown.get_item_count() - 1:
 			dropdown.select(0)
 	else:
-		if group_dropdown.selected == group_dropdown.get_item_count()-1:
+		if group_dropdown.selected == group_dropdown.get_item_count() - 1:
 			group_dropdown.select(0)
 
 # Function to edit the current save config's name
 func edit_current_preset_name(edit_type: String = "default"):
-
 	# If we are editing the dropdown
 	if dropdown.visible:
 		# If we are editing the preset which means this isn't a new one and isn't the first entry then...
-		if dropdown.selected != dropdown.get_item_count()-1 && dropdown.selected != 0:
-			popup_editname_window(edit_type, "Edit Preset Template Name",dropdown.get_item_text(dropdown.selected))
+		if dropdown.selected != dropdown.get_item_count() - 1 && dropdown.selected != 0:
+			popup_editname_window(edit_type, "Edit Preset Template Name", dropdown.get_item_text(dropdown.selected))
 	# If this is the group preset
 	else:
 		match edit_type:
 			"default":
 				# If we are editing the preset which means this isn't a new one and isn't the first entry then...
-				if group_dropdown.selected != group_dropdown.get_item_count()-1:
-					popup_editname_window(edit_type, "Edit Preset Group Name",group_dropdown.get_item_text(group_dropdown.selected))
+				if group_dropdown.selected != group_dropdown.get_item_count() - 1:
+					popup_editname_window(edit_type, "Edit Preset Group Name", group_dropdown.get_item_text(group_dropdown.selected))
 					
 			"copy":
 				# If this is a save confirmation
-				popup_editname_window(edit_type, "New Copied Preset Group Name","")
+				popup_editname_window(edit_type, "New Copied Preset Group Name", "")
 	
 	_save_preset_config_file()
 				
 
 # Pop up the edit name window with various titles and text defaults
 func popup_editname_window(edit_type: String, title: String, text: String):
-
-	outputlog("popup_editname_window",2)
+	outputlog("popup_editname_window", 2)
 
 	global.Editor.SearchHasFocus = true
 	editname_window.window_title = title
@@ -591,8 +572,7 @@ func popup_editname_window(edit_type: String, title: String, text: String):
 
 # Function called when a new preset value is selected, used to load presets or to add a new preset template
 func on_preset_selected(index):
-
-	outputlog("on_preset_selected: " + str(index),1)
+	outputlog("on_preset_selected: " + str(index), 1)
 
 	# If the "None" value is selected then do nothing
 	if index == 0 && not show_preset_groups_button.pressed:
@@ -605,16 +585,15 @@ func on_preset_selected(index):
 		delete_button.disabled = false
 	
 	# If the "Add New Preset Button" value is selected then launch a window to enter a new name. This is better than always checking if the control has focus in the UI
-	if index == dropdown.get_item_count()-1:
+	if index == dropdown.get_item_count() - 1:
 		# Pop up the edit name window
-		popup_editname_window("default", "Create New Preset Template","")
+		popup_editname_window("default", "Create New Preset Template", "")
 	else:
-		self.emit_signal("load_preset_values",dropdown.get_item_metadata(index))
+		self.emit_signal("load_preset_values", dropdown.get_item_metadata(index))
 
 # Function called when a new preset value is selected, used to load presets or to add a new preset template
 func on_preset_group_selected(index):
-
-	outputlog("on_preset_group_selected: " + str(index),1)
+	outputlog("on_preset_group_selected: " + str(index), 1)
 
 	edit_name_button.disabled = false
 	delete_button.disabled = false
@@ -624,15 +603,14 @@ func on_preset_group_selected(index):
 		delete_button.disabled = true
 	
 	# If the "Add New Group" item is selected then launch a window to enter a new name. This is better than always checking if the control has focus in the UI
-	if index == group_dropdown.get_item_count()-1:
-		popup_editname_window("default", "Create New Preset Template","")
+	if index == group_dropdown.get_item_count() - 1:
+		popup_editname_window("default", "Create New Preset Template", "")
 	else:
 		_load_preset_group_into_ui(store_data["group_data"][group_dropdown.get_item_metadata(index)])
 
 
 # Function to reset the dropdown without saving
 func reset_dropdown():
-
 	# Reset the dropdown to default values
 	dropdown.clear()
 	if has_default_preset_mode:
@@ -644,8 +622,7 @@ func reset_dropdown():
 
 # Function to look at the preset group data and add it to the preset dropdown
 func _load_preset_group_into_ui(group_data: Dictionary):
-
-	outputlog("_load_preset_group_into_ui",1)
+	outputlog("_load_preset_group_into_ui", 1)
 
 	# Reset the dropdown to default values
 	reset_dropdown()
@@ -664,7 +641,7 @@ func _load_preset_group_into_ui(group_data: Dictionary):
 			sorted_list.append(config)
 		
 	# Sort the list by name of preset leaving aside the default
-	sorted_list.sort_custom(DataSorter,"sort_ascending_by_name")
+	sorted_list.sort_custom(DataSorter, "sort_ascending_by_name")
 	if has_default_preset_mode && have_popped_default:
 		sorted_list.push_front(store_default)
 	
@@ -672,9 +649,9 @@ func _load_preset_group_into_ui(group_data: Dictionary):
 	for config in sorted_list:
 		# Check if the assets in the preset can be placed on this map, if not archive it
 		# Set the last item name to the config name
-		dropdown.set_item_text(dropdown.get_item_count()-1,config["name"])
-		dropdown.set_item_metadata(dropdown.get_item_count()-1,config)
-		outputlog("_load_scatter_preset_config_file: config: " + str(config),1)
+		dropdown.set_item_text(dropdown.get_item_count() - 1, config["name"])
+		dropdown.set_item_metadata(dropdown.get_item_count() - 1, config)
+		outputlog("_load_scatter_preset_config_file: config: " + str(config), 1)
 		# Add a new entry for Add New Preset - noting we simply check for the last one when adding a new entry so this is fine
 		dropdown.add_item("Add New Preset")
 	
@@ -682,7 +659,7 @@ func _load_preset_group_into_ui(group_data: Dictionary):
 	dropdown.select(0)
 	on_preset_selected(0)
 	self.emit_signal("request_save_current_preset_values")
-	self.emit_signal("group_selected",group_data["group_name"])
+	self.emit_signal("group_selected", group_data["group_name"])
 
 
 #########################################################################################################
@@ -693,36 +670,32 @@ func _load_preset_group_into_ui(group_data: Dictionary):
 
 # Function to return the currently active preset data
 func get_current_preset_data():
-
 	return dropdown.get_item_metadata(dropdown.selected)
 
 func get_current_group_data():
-
 	return store_data["group_data"][group_dropdown.get_item_metadata(group_dropdown.selected)]
 
 # Save the value in the existing UI into the scatter preset selected in the dropdown
 func save_current_preset_values(data: Dictionary):
-
 	outputlog("save_current_preset_values: data: " + str(data), 2)
 
 	var preset_config: Dictionary
 	var index = dropdown.selected
 	# If we have selected no scatter preset or this it the "add button" (noting this should not be possible) then don't save
-	if (index == 0 && not has_default_preset_mode) || index == dropdown.get_item_count()-1:
+	if (index == 0 && not has_default_preset_mode) || index == dropdown.get_item_count() - 1:
 		return
 	
 	preset_config = data.duplicate(true)
 	# Set the name of the config to the name of the preset text
 	preset_config["name"] = dropdown.get_item_text(index)
 	# Attach the preset config as a metadata entry to the index of the preset
-	dropdown.set_item_metadata(index,preset_config.duplicate(true))
+	dropdown.set_item_metadata(index, preset_config.duplicate(true))
 
 	_save_preset_config_file()
 
 
 # Function to look through all the existing group ids and create a new one
 func get_new_group_id():
-
 	var characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	var id_length = 10
 
@@ -739,7 +712,6 @@ func get_new_group_id():
 
 # Function to take the current store_data dictionary and load it into the UI. 
 func _load_store_data_into_ui():
-
 	if not store_data.has("group_data"):
 		return
 
@@ -787,7 +759,7 @@ func _load_store_data_into_ui():
 	# Populate the UI based on the sorted group data
 	for entry in temp_list:
 		group_dropdown.add_item(store_data["group_data"][entry["group_data_key"]]["group_name"])
-		group_dropdown.set_item_metadata(group_dropdown.get_item_count()-1,entry["group_data_key"])
+		group_dropdown.set_item_metadata(group_dropdown.get_item_count() - 1, entry["group_data_key"])
 	group_dropdown.add_item("Add New Group")
 
 	# Select the first group on the list
@@ -796,14 +768,13 @@ func _load_store_data_into_ui():
 
 # Function to take a new set of store data items and merge it into the existing store data item
 func merge_into_store_data(new_data: Dictionary):
-
-	outputlog("merge_into_store_data",2)
+	outputlog("merge_into_store_data", 2)
 
 	# Take the existing store data and convert it back into a raw list
 	convert_store_data_to_long_list()
 
 	if not new_data.has("group_data"):
-		outputlog("group_data value not found",2)
+		outputlog("group_data value not found", 2)
 		return
 	
 	# Look at each entry in the list
@@ -815,15 +786,13 @@ func merge_into_store_data(new_data: Dictionary):
 
 # Function to take the store data with a valid_list and archive_list and add back the list value
 func convert_store_data_to_long_list():
-
-	outputlog("convert_store_data_to_long_list",2)
+	outputlog("convert_store_data_to_long_list", 2)
 
 	if not store_data.has("group_data"):
 		return
 
 	# For each group_data_key
 	for group_data_key in store_data["group_data"].keys():
-
 		store_data["group_data"][group_data_key]["list"] = []
 
 		# Take the valid_list data and add it
@@ -834,7 +803,7 @@ func convert_store_data_to_long_list():
 		# Take the archive_list data and add it
 		if store_data["group_data"][group_data_key].has("archive_list"):
 			for item in store_data["group_data"][group_data_key]["archive_list"]:
-				store_data["group_data"][group_data_key]["list"].append(item.duplicate(true)) 
+				store_data["group_data"][group_data_key]["list"].append(item.duplicate(true))
 
 
 #########################################################################################################
@@ -845,7 +814,6 @@ func convert_store_data_to_long_list():
 
 # Function to get the url for the file path
 func get_config_path_dir() -> String:
-
 	var config_path_dir = "user://mod_config/" + unique_id.to_lower().replace(" ", "").replace(".", "_")
 
 	var dir: Directory = Directory.new()
@@ -856,10 +824,9 @@ func get_config_path_dir() -> String:
 
 # Function to save scatter presets settings into a JSON config file
 func _save_preset_config_file():
-
 	var data = {}
 
-	outputlog("_save_preset_config_file",2)
+	outputlog("_save_preset_config_file", 2)
 
 	# Save the current values recorded in the dropdown metadata into the data store
 	_save_current_presets_into_store()
@@ -870,13 +837,12 @@ func _save_preset_config_file():
 	data["config_name"] = preset_config_name
 	data["group_data"] = {}
 
-	outputlog("store_data: " + str(store_data),2)
-	outputlog("store_data[group_data].keys(): " + str(store_data["group_data"].keys()),2)
+	outputlog("store_data: " + str(store_data), 2)
+	outputlog("store_data[group_data].keys(): " + str(store_data["group_data"].keys()), 2)
 
 	# For each group in the store data record
 	for group_data_key in store_data["group_data"].keys():
-
-		outputlog("group_data_key: ", str(group_data_key),2)
+		outputlog("group_data_key: ", str(group_data_key), 2)
 
 		data["group_data"][group_data_key] = {}
 		data["group_data"][group_data_key]["list"] = []
@@ -896,8 +862,7 @@ func _save_preset_config_file():
 
 # Function to current preset data into the data store in preparation for saving to file. Only if we are looking at the dropdown menu otherwise ignore.
 func _save_current_presets_into_store():
-
-	outputlog("_save_current_presets_into_store",2)
+	outputlog("_save_current_presets_into_store", 2)
 	var start_index = 1
 
 	# If we are in the group editing version, then ignore this call
@@ -914,7 +879,7 @@ func _save_current_presets_into_store():
 	if has_default_preset_mode:
 		start_index = 0
 
-	for _i in range(start_index,dropdown.get_item_count()-1,1):
+	for _i in range(start_index, dropdown.get_item_count() - 1, 1):
 		# Add the metadata from the preset list
 		data["valid_list"].append(JSON.parse(JSON.print(dropdown.get_item_metadata(_i), "\t")).result)
 	
@@ -924,14 +889,13 @@ func _save_current_presets_into_store():
 
 # Read the stored configuration file from last time
 func _load_scatter_preset_config_file():
-
-	outputlog("_load_scatter_preset_config_file()",1)
+	outputlog("_load_scatter_preset_config_file()", 1)
 
 	var file = File.new()
 	var err = file.open(get_config_path_dir() + "/" + preset_config_filename, File.READ)
 	if err != OK:
-		outputlog("_load_scatter_preset_config_file: file not found: " + str(global.Root + preset_config_filename),2)
-		outputlog("_load_scatter_preset_config_file: using default values.",2)
+		outputlog("_load_scatter_preset_config_file: file not found: " + str(global.Root + preset_config_filename), 2)
+		outputlog("_load_scatter_preset_config_file: using default values.", 2)
 		store_data = DEFAULT_STORE_DATA.duplicate(true)
 
 		_load_store_data_into_ui()
@@ -951,7 +915,6 @@ func _load_scatter_preset_config_file():
 
 # When the export button is pressed, open a file dialog and select a json file to open and import
 func on_export_button_pressed():
-
 	var file_dialog = FileDialog.new()
 
 	global.Editor.SearchHasFocus = true
@@ -960,15 +923,14 @@ func on_export_button_pressed():
 	file_dialog.access = 2
 	file_dialog.current_dir = global.Root
 	file_dialog.set_filters(PoolStringArray(["*.json ;JSON files"]))
-	file_dialog.connect("file_selected",self, "on_preset_file_to_export_selected")
+	file_dialog.connect("file_selected", self, "on_preset_file_to_export_selected")
 	global.Editor.get_node("Windows").add_child(file_dialog)
-	file_dialog.connect("popup_hide",self,"set_searchhasfocus_to_false")
+	file_dialog.connect("popup_hide", self, "set_searchhasfocus_to_false")
 	file_dialog.popup_centered_ratio(0.75)
 
 
 # When an import button is pressed, open a file dialog and select a json file to open and import
 func on_import_button_pressed():
-
 	var file_dialog = FileDialog.new()
 
 	global.Editor.SearchHasFocus = true
@@ -977,25 +939,23 @@ func on_import_button_pressed():
 	file_dialog.access = 2
 	file_dialog.current_dir = global.Root
 	file_dialog.set_filters(PoolStringArray(["*.json ;JSON files"]))
-	file_dialog.connect("file_selected",self, "on_preset_file_to_import_selected")
+	file_dialog.connect("file_selected", self, "on_preset_file_to_import_selected")
 	global.Editor.get_node("Windows").add_child(file_dialog)
-	file_dialog.connect("popup_hide",self,"set_searchhasfocus_to_false")
+	file_dialog.connect("popup_hide", self, "set_searchhasfocus_to_false")
 	file_dialog.popup_centered_ratio(0.75)
 
 # Function to restore default setting of search has focus
 func set_searchhasfocus_to_false():
-
 	global.Editor.SearchHasFocus = false
 
 # Function to process a selected file to import
 func on_preset_file_to_import_selected(file_path: String):
-
-	outputlog("on_preset_file_to_import_selected(): " + str(file_path),1)
+	outputlog("on_preset_file_to_import_selected(): " + str(file_path), 1)
 
 	var file = File.new()
 	var err = file.open(file_path, File.READ)
 	if err != OK:
-		outputlog("on_preset_file_to_import_selected: file not found: " + str(file_path),1)
+		outputlog("on_preset_file_to_import_selected: file not found: " + str(file_path), 1)
 
 		return
 	else:
@@ -1016,10 +976,9 @@ func on_preset_file_to_import_selected(file_path: String):
 
 # Function to export some of the preset groups to a user defined json file
 func on_preset_file_to_export_selected(file_path: String):
-
 	var data = {}
 
-	outputlog("on_preset_file_to_export_selected",1)
+	outputlog("on_preset_file_to_export_selected", 1)
 
 	# Save the current values recorded in the dropdown metadata into the data store
 	_save_current_presets_into_store()
@@ -1031,14 +990,14 @@ func on_preset_file_to_export_selected(file_path: String):
 	data["group_data"] = {}
 
 	var list_to_export = []
-	outputlog("export_groups_menu_button: " + str(export_groups_menu_button),2)
-	outputlog("export_groups_menu_button.get_item_count(): " + str(export_groups_menu_button.get_item_count()),2)
+	outputlog("export_groups_menu_button: " + str(export_groups_menu_button), 2)
+	outputlog("export_groups_menu_button.get_item_count(): " + str(export_groups_menu_button.get_item_count()), 2)
 	
 	# If there is an export group button which there should be
 	if export_groups_menu_button != null:
 		# Go through each entry
 		for idx in export_groups_menu_button.get_popup().get_item_count():
-			outputlog("idx: " + str(idx) + " checked: " + str(export_groups_menu_button.is_item_checked(idx)),2)
+			outputlog("idx: " + str(idx) + " checked: " + str(export_groups_menu_button.is_item_checked(idx)), 2)
 			# If the group is checked then add it to the export list
 			if export_groups_menu_button.get_popup().is_item_checked(idx):
 				list_to_export.append(export_groups_menu_button.get_popup().get_item_metadata(idx))
@@ -1046,11 +1005,9 @@ func on_preset_file_to_export_selected(file_path: String):
 	outputlog("group export list: " + str(list_to_export), 2)
 	# For each group in the store data record
 	for group_data_key in store_data["group_data"].keys():
-
 		# If the group data key is the list to export then add it to the data structure to export
 		if group_data_key in list_to_export:
-
-			outputlog("group_data_key: ", str(group_data_key),2)
+			outputlog("group_data_key: ", str(group_data_key), 2)
 
 			data["group_data"][group_data_key] = {}
 			data["group_data"][group_data_key]["list"] = []

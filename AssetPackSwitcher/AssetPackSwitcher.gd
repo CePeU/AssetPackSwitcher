@@ -33,6 +33,9 @@ var pack_focus_pixel_spinbox = null
 var pack_result_cycle_indices = {}
 var pack_selected_single_entry = null
 
+# Hash-based fallback cache: pack_id -> {hash: path}
+var pack_target_hash_cache = {}
+
 # Absolute map-size reference used by the camera focus calculation.
 # Dungeondraft map coordinates are expected to use pixels/world units, where
 # one visible grid cell normally corresponds to 256 world units.
@@ -41,14 +44,24 @@ var pack_map_height_spinbox = null
 var pack_map_size_override_hbox = null
 var pack_map_size_status_label = null
 
+# Persistent hash-cache state
+#const HASH_CACHE_FILENAME = "swapassets_hash_cache.json"
+# pack_hash_json_data is the single in-memory cache for ALL packs.
+# Each pack_id maps to its own scanned data: {pack_name, needs_rescan, assets}.
+# A pack is loaded from disk once per session; if it is already a key here,
+# it is considered already merged and will not be re-read.
+var pack_hash_json_data = {}
+var pack_hash_status_label = null
+var pack_rescan_button = null
+
 const DUNGEONDRAFT_GRID_CELL_SIZE = 256.0
 
-const ASSET_TYPES = {"Objects": "objects", "Object Custom Colours": "object_colours", "Paths": "paths", "Terrain": "terrain", "Patterns": "pattern_shapes", "Environment Light": "environment_light", "Lights": "lights",  "Walls": "walls", "Portals": "portals"}
+const ASSET_TYPES = {"Objects": "objects", "Object Custom Colours": "object_colours", "Paths": "paths", "Terrain": "terrain", "Patterns": "pattern_shapes", "Environment Light": "environment_light", "Lights": "lights", "Walls": "walls", "Portals": "portals"}
 const DEFAULT_PRESET_DATA = {"objects": [], "paths": [], "lights": [], "pattern_shapes": [], "terrain": [], "object_colours": [], "walls": [], "portals": [], "environment_light": []}
 
 const TOOL_TYPE_LOOKUP = {"objects": "ObjectTool", "paths": "PathTool", "pattern_shapes": "PatternShapeTool", "walls": "WallTool", "portals": "PortalTool", "terrain": "TerrainBrush", "lights": "LightTool"}
 const RH_TOOL_TYPES = ["PatternShapeTool", "TerrainBrush", "WallTool", "PortalTool"]
-const HIDE_SPINBOX_ASSET_LIST = ["pattern_shapes","terrain","walls","portals"]
+const HIDE_SPINBOX_ASSET_LIST = ["pattern_shapes", "terrain", "walls", "portals"]
 const TEXTURE_SWAP_ASSETS = ["objects", "paths", "pattern_shapes", "terrain", "walls", "portals"]
 const COLOUR_SWAP_ASSETS = ["object_colours", "lights", "environment_light"]
 
@@ -66,10 +79,10 @@ var timer = null
 const ENABLE_LOGGING = true
 const LOGGING_LEVEL = 0
 
-func outputlog(msg,level=0):
+func outputlog(msg, level = 0):
 	if ENABLE_LOGGING:
 		if level <= LOGGING_LEVEL:
-			printraw("(%d) <SwapAssets>: " % OS.get_ticks_msec())
+			printraw("(%d) <AssetPackSwitcher>: " % OS.get_ticks_msec())
 			print(msg)
 	else:
 		pass
@@ -85,13 +98,13 @@ func get_asset_texture(node, tool_type: String):
 	var texture = null
 
 	match tool_type:
-		"ObjectTool","ScatterTool","WallTool","PortalTool","objects","portals","walls":
+		"ObjectTool", "ScatterTool", "WallTool", "PortalTool", "objects", "portals", "walls":
 			texture = node.Texture
-		"PathTool", "LightTool","paths","lights":
+		"PathTool", "LightTool", "paths", "lights":
 			texture = node.get_texture()
-		"PatternShapeTool","pattern_shapes":
+		"PatternShapeTool", "pattern_shapes":
 			texture = node._Texture
-		"RoofTool","roofs":
+		"RoofTool", "roofs":
 			texture = node.TilesTexture
 		_:
 			return null
@@ -100,7 +113,6 @@ func get_asset_texture(node, tool_type: String):
 
 # Find the width scale of a path
 func find_path_width_scale(path) -> float:
-
 	if path == null: return 1.0
 
 	if not Global.World.HasNodeID(path.get_meta("node_id")):
@@ -114,8 +126,7 @@ func find_path_width_scale(path) -> float:
 
 # Loads an image texture from ResourceLoader if that is possible or direct from a file if not
 func safe_load_texture(path: String) -> Texture:
-
-	outputlog("safe_load_texture: " + str(path),2)
+	outputlog("safe_load_texture: " + str(path), 2)
 
 	var texture = null
 	if ResourceLoader.exists(path):
@@ -141,12 +152,11 @@ func load_runtime_image(path: String) -> Texture:
 
 # Function to set a property on an object but block any signals for it
 func set_property_but_block_signals(obj: Object, property: String, value):
-
-	outputlog("set_property_but_block_signals: " + str(obj) + " property: " + str(property) + " value: " + str(value),3)
+	outputlog("set_property_but_block_signals: " + str(obj) + " property: " + str(property) + " value: " + str(value), 3)
 
 	obj.set_block_signals(true)
 	if obj.get(property) != null:
-		obj.set(property,value)
+		obj.set(property, value)
 	obj.set_block_signals(false)
 
 # Function to take a string and add a space before any internal Capital letter
@@ -197,19 +207,18 @@ func validate_swap_config_data(data):
 
 # Swap all objects with new ones on this level
 func swap_all_assets():
-
-	outputlog("swap_all_assets",2)
+	outputlog("swap_all_assets", 2)
 	var reverse = ui_config["core"]["reverse_button"].pressed
 
 	var flat_data = make_flat_swap_lists(presetsdropdown.get_current_group_data(), reverse)
 	if flat_data == null: return
 	var list = []
 
-	outputlog("flat_data: " + str(flat_data),2)
+	outputlog("flat_data: " + str(flat_data), 2)
 	var last_valid_history = get_history_record_from_end()
 
 	for type in DEFAULT_PRESET_DATA.keys():
-		outputlog("type: "+ str(type),2)
+		outputlog("type: " + str(type), 2)
 		if type in TEXTURE_SWAP_ASSETS && type != "terrain":
 			match type:
 				"objects":
@@ -245,12 +254,11 @@ func swap_all_assets():
 				"environment_light":
 					swap_environment_light(flat_data[type], reverse)
 
-	purge_history_back_to_record(last_valid_history)		
+	purge_history_back_to_record(last_valid_history)
 
 # Swap the environment light, noting that we ignore the source list setting but simply set to the new
 func swap_environment_light(data: Dictionary, reverse: bool):
-
-	outputlog("swap_environment_light: " + str(data),2)
+	outputlog("swap_environment_light: " + str(data), 2)
 	var target_path_name = "to_colour"
 	if reverse:
 		target_path_name = "from_colour"
@@ -263,7 +271,6 @@ func swap_environment_light(data: Dictionary, reverse: bool):
 
 # swap a custom coloured object
 func swap_custom_colour_object(node: Node2D, data: Dictionary, reverse: bool = false):
-
 	var target_path_name = "to_colour"
 	if reverse:
 		target_path_name = "from_colour"
@@ -276,22 +283,20 @@ func swap_custom_colour_object(node: Node2D, data: Dictionary, reverse: bool = f
 
 # Swap light colour if needed
 func swap_light_colour(node: Node2D, data: Dictionary, reverse: bool = false):
-	
-	outputlog("swap_light_colour: " + str(node),2)
-	outputlog("node.color.to_html(): " + str(node.color.to_html()),2)
+	outputlog("swap_light_colour: " + str(node), 2)
+	outputlog("node.color.to_html(): " + str(node.color.to_html()), 2)
 	var target_path_name = "to_colour"
 	if reverse:
 		target_path_name = "from_colour"
 
 	if data.has(node.color.to_html()):
-		outputlog("has record",2)
+		outputlog("has record", 2)
 		if data[node.color.to_html()].has(target_path_name):
 		# Do the swap
 			node.color = Color(data[node.color.to_html()][target_path_name])
 
 # Function to swap the terrain
 func swap_terrain(terrain_data: Dictionary, reverse: bool = false):
-
 	outputlog("swap_terrain: " + str(terrain_data))
 
 	var terrain = Global.World.GetCurrentLevel().Terrain
@@ -300,9 +305,9 @@ func swap_terrain(terrain_data: Dictionary, reverse: bool = false):
 		target_path_name = "from_texture_path"
 
 	for _i in terrain.textures.size():
-		outputlog("current terrain: " + str(_i) + " " + str(terrain.textures[_i].resource_path),2)
+		outputlog("current terrain: " + str(_i) + " " + str(terrain.textures[_i].resource_path), 2)
 		if terrain_data.has(terrain.textures[_i].resource_path):
-			outputlog("matched terrain",2)
+			outputlog("matched terrain", 2)
 			var texture_path = terrain_data[terrain.textures[_i].resource_path][target_path_name]
 			var texture = safe_load_texture(str(texture_path))
 			if texture == null: return
@@ -341,14 +346,13 @@ func get_preserved_scale(original_scale: Vector2, original_texture, replacement_
 
 # Function to actually do the swap
 func swap_asset_texture(node: Node2D, type: String, config: Dictionary, reverse: bool = false):
-
-	outputlog("swap_asset_texture: " + str(node) + " type " + str(type) + " config: " + str(config),3)
+	outputlog("swap_asset_texture: " + str(node) + " type " + str(type) + " config: " + str(config), 3)
 	var scale_multiplier = config["scale_multiplier"]
 	var target_path = config["to_texture_path"]
 	var target_colourable_key = "to_is_colourable"
 	
 	if reverse:
-		scale_multiplier = 1.0/scale_multiplier
+		scale_multiplier = 1.0 / scale_multiplier
 		target_path = config["from_texture_path"]
 		target_colourable_key = "from_is_colourable"
 	
@@ -425,8 +429,7 @@ func swap_asset_texture(node: Node2D, type: String, config: Dictionary, reverse:
 
 # Function to take the list of presets and flatten it into a single list for each type that can be iterated on
 func make_flat_swap_lists(group_data: Dictionary, reverse: bool = false):
-
-	outputlog("make_flat_swap_lists: " + str(group_data),2)
+	outputlog("make_flat_swap_lists: " + str(group_data), 2)
 
 	if not group_data.has("valid_list"): return null
 
@@ -434,14 +437,14 @@ func make_flat_swap_lists(group_data: Dictionary, reverse: bool = false):
 
 	# For each preset
 	for preset in group_data["valid_list"]:
-		outputlog("preset: " + str(preset),3)
+		outputlog("preset: " + str(preset), 3)
 		# For each type
 		for type in DEFAULT_PRESET_DATA.keys():
-			outputlog("type: " + str(type),3)
+			outputlog("type: " + str(type), 3)
 			if not data.has(type):
 				data[type] = {}
 			for entry in preset[type]:
-				outputlog("entry: " + str(entry),3)
+				outputlog("entry: " + str(entry), 3)
 				if type in TEXTURE_SWAP_ASSETS:
 					# Add a key with the from texture path
 					if not reverse:
@@ -458,7 +461,6 @@ func make_flat_swap_lists(group_data: Dictionary, reverse: bool = false):
 
 # Reset the swap list to empty
 func reset_swap_list():
-
 	# For each swap value in the swap vbox
 	for swap in swap_vbox.get_children():
 		swap_vbox.remove_child(swap)
@@ -470,6 +472,631 @@ func reset_swap_list():
 ##
 #########################################################################################################
 
+# ============================================================================
+# PACK HASH CACHE
+# ============================================================================
+#
+# IMPORTANT:
+# - No cache is loaded during UI construction.
+# - Persistent cache is loaded lazily, only when a pack is actually needed.
+# - Runtime hash-to-path cache is kept separate from persistent cache data.
+# - Cache files are per-pack binary files.
+# - Invalid/old cache data is ignored instead of entering the runtime state.
+#
+# ============================================================================
+
+const HASH_CACHE_FILENAME = "AssetPackSwitcher_hash_cache.bin"
+
+# Persistent in-memory cache.
+#
+# Structure:
+#
+# pack_hash_json_data = {
+#     "PACK_ID": {
+#         "pack_name": "...",
+#         "needs_rescan": false,
+#         "assets": [
+#             {
+#                 "path": "...",
+#                 "relative_path": "...",
+#                 "hash": "...",
+#                 "type": "objects"
+#             }
+#         ]
+#     }
+# }
+#
+
+#var pack_hash_json_data = {}
+
+# Runtime-only lookup:
+#
+# pack_target_hash_cache = {
+#     "PACK_ID": {
+#         "HASH": "res://packs/PACK_ID/..."
+#     }
+# }
+#
+
+#var pack_target_hash_cache = {}
+
+#var pack_hash_status_label = null
+#var pack_rescan_button = null
+
+
+# ----------------------------------------------------------------------------
+# Cache path
+# ----------------------------------------------------------------------------
+
+func get_hash_cache_path() -> String:
+	var pack_id = get_selected_pack_to_id()
+	if pack_id == "":
+		return ""
+
+	return _get_hash_cache_path_for_pack(pack_id)
+
+
+func _get_hash_cache_path_for_pack(pack_id: String) -> String:
+	pack_id = normalize_pack_id(pack_id)
+
+	if pack_id == "":
+		return ""
+
+	return "user://" + pack_id + "_hashcache.bin"
+
+
+# ----------------------------------------------------------------------------
+# Persistent cache validation
+# ----------------------------------------------------------------------------
+
+func is_valid_pack_hash_cache_entry(data) -> bool:
+	if not data is Dictionary:
+		return false
+
+	# The current cache format must contain an assets array.
+	if not data.has("assets"):
+		return false
+
+	if not data["assets"] is Array:
+		return false
+
+	# Optional fields are tolerated because older valid cache entries
+	# may not contain all metadata fields.
+	return true
+
+
+# ----------------------------------------------------------------------------
+# Load one pack cache from disk
+# ----------------------------------------------------------------------------
+
+func load_pack_hash_from_disk(pack_id: String) -> bool:
+	pack_id = normalize_pack_id(pack_id)
+
+	if pack_id == "":
+		return false
+
+	# Do not reload a pack which has already been loaded during this session.
+	if pack_hash_json_data.has(pack_id):
+		return true
+
+	var path = _get_hash_cache_path_for_pack(pack_id)
+
+	if path == "":
+		return false
+
+	var file = File.new()
+
+	if not file.file_exists(path):
+		return false
+
+	var err = file.open(path, File.READ)
+
+	if err != OK:
+		printerr(
+			"HashCache: Failed to open '",
+			path,
+			"' for reading (Error ",
+			err,
+			")"
+		)
+		return false
+
+	var data = null
+
+	# get_var() is the format used by the current save implementation.
+	data = file.get_var()
+
+	file.close()
+
+	if not is_valid_pack_hash_cache_entry(data):
+		printerr(
+			"HashCache: Ignoring invalid or incompatible cache for pack ",
+			pack_id
+		)
+		return false
+
+	# Store only the pack which was actually requested.
+	pack_hash_json_data[pack_id] = data
+
+	print("HashCache: Loaded cache for pack: ", pack_id)
+
+	return true
+
+
+# ----------------------------------------------------------------------------
+# Compare cached asset paths against the actual pack
+#
+# IMPORTANT:
+# This function performs a directory scan.
+# Therefore it must NEVER be called from make_swap_assets_ui().
+# ----------------------------------------------------------------------------
+
+func check_pack_hash_sync(pack_id: String) -> bool:
+	pack_id = normalize_pack_id(pack_id)
+
+	if pack_id == "":
+		return false
+
+	if not pack_hash_json_data.has(pack_id):
+		return false
+
+	var cache_entry = pack_hash_json_data[pack_id]
+
+	if not cache_entry is Dictionary:
+		return false
+
+	var cached_paths = {}
+
+	var assets = cache_entry.get("assets", [])
+
+	if not assets is Array:
+		return false
+
+	for asset in assets:
+		if not asset is Dictionary:
+			continue
+
+		if not asset.has("path"):
+			continue
+
+		var cached_path = str(asset["path"])
+
+		if cached_path != "":
+			cached_paths[cached_path] = true
+
+	# This is deliberately lazy.
+	# It only happens after the pack is actually requested.
+	var actual_files = scan_pack_directory(pack_id)
+
+	var needs_rescan = false
+
+	# Check for files which disappeared.
+	for cached_path in cached_paths.keys():
+		if not actual_files.has(cached_path):
+			needs_rescan = true
+			break
+
+	# Check for files which were added.
+	if not needs_rescan:
+		for actual_path in actual_files:
+			if not cached_paths.has(actual_path):
+				needs_rescan = true
+				break
+
+	cache_entry["needs_rescan"] = needs_rescan
+
+	return not needs_rescan
+
+
+# ----------------------------------------------------------------------------
+# Lazy cache loading
+# ----------------------------------------------------------------------------
+#
+# This is the ONLY normal entry point for loading a persistent pack cache.
+#
+# It deliberately does NOT scan the pack if no cache exists.
+#
+# If no cache exists, the caller can decide whether a complete scan is needed.
+# ----------------------------------------------------------------------------
+
+func ensure_pack_hash_loaded(pack_id: String) -> bool:
+	pack_id = normalize_pack_id(pack_id)
+
+	if pack_id == "":
+		return false
+
+	# Already loaded in this session.
+	if pack_hash_json_data.has(pack_id):
+		return true
+
+	# Try to load the persistent cache.
+	if not load_pack_hash_from_disk(pack_id):
+		return false
+
+	# Only synchronize a cache which was successfully loaded.
+	#
+	# IMPORTANT:
+	# This function must only be called after Dungeondraft has a valid
+	# asset/world state.
+	check_pack_hash_sync(pack_id)
+
+	return true
+
+
+# ----------------------------------------------------------------------------
+# Compatibility wrapper
+# ----------------------------------------------------------------------------
+#
+# Existing code may still call load_hash_cache().
+# It now performs only lazy loading of the currently selected destination
+# pack. It does NOT globally load the cache.
+# ----------------------------------------------------------------------------
+
+func load_hash_cache() -> void:
+	var pack_id = get_selected_pack_to_id()
+
+	if pack_id == "":
+		return
+
+	ensure_pack_hash_loaded(pack_id)
+
+
+# ----------------------------------------------------------------------------
+# Save ONLY the currently selected pack
+# ----------------------------------------------------------------------------
+
+func save_hash_cache() -> void:
+	var pack_id = get_selected_pack_to_id()
+
+	if pack_id == "":
+		printerr("HashCache: No pack selected to save")
+		return
+
+	if not pack_hash_json_data.has(pack_id):
+		printerr(
+			"HashCache: No data in memory for pack ",
+			pack_id,
+			" - nothing to save"
+		)
+		return
+
+	var path = _get_hash_cache_path_for_pack(pack_id)
+
+	if path == "":
+		return
+
+	var dir = Directory.new()
+	var dir_path = path.get_base_dir()
+
+	if dir_path != "" and not dir.dir_exists(dir_path):
+		var dir_err = dir.make_dir_recursive(dir_path)
+
+		if dir_err != OK:
+			printerr(
+				"HashCache: Failed to create directory (Error ",
+				dir_err,
+				")"
+			)
+			return
+
+	var file = File.new()
+	var err = file.open(path, File.WRITE)
+
+	if err != OK:
+		printerr(
+			"HashCache: Failed to open '",
+			path,
+			"' for writing (Error ",
+			err,
+			")"
+		)
+		return
+
+	file.store_var(pack_hash_json_data[pack_id])
+	file.close()
+
+	print("HashCache: Saved cache for pack: ", pack_id)
+
+
+# ----------------------------------------------------------------------------
+# Runtime hash cache
+# ----------------------------------------------------------------------------
+
+func clear_pack_hash_cache() -> void:
+	# IMPORTANT:
+	# This clears ONLY the runtime hash -> path cache.
+	# Persistent pack cache remains untouched.
+	pack_target_hash_cache.clear()
+
+
+func build_pack_hash_cache(pack_id: String) -> Dictionary:
+	pack_id = normalize_pack_id(pack_id)
+
+	if pack_id == "":
+		return {}
+
+	# Runtime cache already exists.
+	if pack_target_hash_cache.has(pack_id):
+		return pack_target_hash_cache[pack_id]
+
+	# Make sure a persistent cache is available if one exists.
+	#
+	# This is deliberately lazy.
+	ensure_pack_hash_loaded(pack_id)
+
+	# If the persistent cache contains usable assets, build the runtime
+	# lookup from it instead of hashing every file again.
+	if pack_hash_json_data.has(pack_id):
+		var persistent_entry = pack_hash_json_data[pack_id]
+
+		if persistent_entry is Dictionary:
+			var persistent_assets = persistent_entry.get("assets", [])
+
+			if persistent_assets is Array:
+				var cached_lookup = {}
+
+				for asset in persistent_assets:
+					if not asset is Dictionary:
+						continue
+
+					if not asset.has("hash"):
+						continue
+
+					if not asset.has("path"):
+						continue
+
+					var hash_value = str(asset["hash"])
+					var asset_path = str(asset["path"])
+
+					if hash_value == "" or asset_path == "":
+						continue
+
+					if not cached_lookup.has(hash_value):
+						cached_lookup[hash_value] = asset_path
+
+				if cached_lookup.size() > 0:
+					pack_target_hash_cache[pack_id] = cached_lookup
+					return cached_lookup
+
+	# No usable persistent cache.
+	#
+	# This is the expensive fallback and should happen only when a real
+	# replacement operation actually requires the pack.
+	var cache = {}
+	var files = scan_pack_directory(pack_id)
+
+	for file_path in files:
+		var h = hash_file(file_path)
+
+		if h != "" and not cache.has(h):
+			cache[h] = file_path
+
+	pack_target_hash_cache[pack_id] = cache
+
+	return cache
+
+
+# ----------------------------------------------------------------------------
+# Find an asset by content hash
+# ----------------------------------------------------------------------------
+
+func find_hash_match_in_pack(source_path: String, target_pack_id: String) -> String:
+	if source_path == "":
+		return ""
+
+	target_pack_id = normalize_pack_id(target_pack_id)
+
+	if target_pack_id == "":
+		return ""
+
+	var source_hash = hash_file(source_path)
+
+	if source_hash == "":
+		return ""
+
+	var cache = build_pack_hash_cache(target_pack_id)
+
+	if cache.has(source_hash):
+		return str(cache[source_hash])
+
+	return ""
+
+func infer_asset_type_from_relative_path(relative_path: String) -> String:
+	if relative_path.empty():
+		return "unknown"
+
+	# Split by "/" and take the first segment
+	var parts = relative_path.split("/")
+	var folder = parts[0].to_lower()
+	#var path: String = relative_path
+	#var folder: String = path.get_slice("/", 0)
+	#.to_lower()
+	#if relative_path.empty():
+	#   return "unknown"
+
+	#var first_part: String = relative_path.get_slice("/", 0)
+	#var folder: String = first_part.to_lower()
+	#var folder = relative_path
+	#var folder = relative_path.get_slice("/", 0)
+	#folder = relative_path.to_lower()
+	#.get_slice("/", 0).to_lower()
+	match folder:
+		"objects":
+			return "objects"
+		"walls":
+			return "walls"
+		"paths":
+			return "paths"
+		"terrain":
+			return "terrain"
+		"portals", "doors":
+			return "portals"
+		"pattern_shapes", "patterns":
+			return "pattern_shapes"
+		"lights":
+			return "lights"
+		"roofs":
+			return "roofs"
+		"environment", "environment_light":
+			return "environment_light"
+		"object_colours", "object_colors":
+			return "object_colours"
+		_:
+			return "unknown"
+
+func scan_and_hash_pack(pack_id: String) -> Dictionary:
+	var pack_name = pack_asset_catalog.get(pack_id, "(name unavailable)")
+	var assets = []
+	var files = scan_pack_directory(pack_id)
+	for file_path in files:
+		var relative = get_pack_relative_path(file_path)
+		if relative == "":
+			continue
+		var hash_val = hash_file(file_path)
+		if hash_val == "":
+			continue
+		assets.append({
+			"path": file_path,
+			"name": file_path.get_file(),
+			"path_and_name": relative,
+			"asset_type": infer_asset_type_from_relative_path(relative),
+			"hash": hash_val
+		})
+	return {
+		"pack_name": pack_name,
+		"needs_rescan": false,
+		"assets": assets
+	}
+
+func flag_pack_needs_rescan(pack_id: String):
+	if pack_hash_json_data.has(pack_id):
+		pack_hash_json_data[pack_id]["needs_rescan"] = true
+	else:
+		pack_hash_json_data[pack_id] = {
+			"pack_name": pack_asset_catalog.get(pack_id, "(name unavailable)"),
+			"needs_rescan": true,
+			"assets": []
+		}
+	#save_hash_cache()
+
+# Lightweight: sync was already checked when we loaded from disk.
+func validate_pack_to_hash_status():
+	update_pack_hash_status()
+
+func update_pack_hash_status() -> void:
+	if pack_hash_status_label == null:
+		return
+
+	if pack_rescan_button == null:
+		return
+
+	var pack_id = get_selected_pack_to_id()
+
+	if pack_id == "":
+		pack_hash_status_label.text = "Not selected"
+		pack_rescan_button.disabled = true
+		return
+
+	if not pack_hash_json_data.has(pack_id):
+		pack_hash_status_label.text = "NO HASH CACHE used"
+		pack_rescan_button.disabled = false
+		return
+
+	var entry = pack_hash_json_data[pack_id]
+
+	if not entry is Dictionary:
+		pack_hash_status_label.text = "INVALID HASH CACHE"
+		pack_rescan_button.disabled = false
+		return
+
+	if entry.get("needs_rescan", false):
+		pack_hash_status_label.text = "STALE HASH CACHE"
+		pack_rescan_button.disabled = false
+	else:
+		var assets = entry.get("assets", [])
+
+		if not assets is Array:
+			assets = []
+
+		pack_hash_status_label.text = (
+			"HASH CACHE UP TO DATE (%d assets)"
+			% assets.size()
+		)
+
+		pack_rescan_button.disabled = false
+func on_pack_rescan_pressed():
+	var pack_id = get_selected_pack_to_id()
+	if pack_id == "":
+		set_pack_status("Select a PackID destination first.")
+		return
+	set_pack_status("Scanning and hashing %s..." % pack_id)
+	var data = scan_and_hash_pack(pack_id)
+	pack_hash_json_data[pack_id] = data
+	save_hash_cache()
+	update_pack_hash_status()
+	set_pack_status("Hash cache rebuilt for %s (%d assets)." % [pack_id, data["assets"].size()])
+
+#func on_pack_rescan_pressed():
+#	var pack_id = get_selected_pack_to_id()
+#	if pack_id == "":
+#		set_pack_status("Select a PackID destination first.")
+#		return
+#	set_pack_status("Scanning and hashing %s..." % pack_id)
+#	var data = scan_and_hash_pack(pack_id)
+#	pack_hash_json_data[pack_id] = data
+#	save_hash_cache()
+#	update_pack_hash_status()
+#	set_pack_status("Hash cache rebuilt for %s (%d assets)." % [pack_id, data.assets.size()])
+
+#func on_pack_to_dropdown_selected(_index: int):
+#	validate_pack_to_hash_status()
+
+func on_pack_to_dropdown_selected(_index: int):
+	var pack_id = get_selected_pack_to_id()
+	ensure_pack_hash_loaded(pack_id)
+	update_pack_hash_status()
+
+######
+#func clear_pack_hash_cache():
+#	pack_target_hash_cache.clear()
+
+# Compute an MD5 hex hash of the raw file bytes.
+func hash_file(path: String) -> String:
+	var file = File.new()
+	if file.open(path, File.READ) != OK:
+		return ""
+	var ctx = HashingContext.new()
+	ctx.start(HashingContext.HASH_MD5)
+	var chunk_size = 1024 * 1024 # 1 MB chunks
+	while not file.eof_reached():
+		ctx.update(file.get_buffer(chunk_size))
+	file.close()
+	return ctx.finish().hex_encode()
+
+# Recursively collect every file under res://packs/<pack_id>/.
+func scan_pack_directory(pack_id: String) -> Array:
+	var root = "res://packs/" + pack_id
+	var files = []
+	_scan_dir_recursive(root, files)
+	return files
+
+func _scan_dir_recursive(path: String, files: Array):
+	var dir = Directory.new()
+	if dir.open(path) != OK:
+		return
+	dir.list_dir_begin(true, true)
+	var file_name = dir.get_next()
+	while file_name != "":
+		var full_path = path + "/" + file_name
+		if dir.current_is_dir():
+			_scan_dir_recursive(full_path, files)
+		else:
+			files.append(full_path)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+
+################################
 func normalize_pack_id(value: String) -> String:
 	var pack_id = value.strip_edges()
 	if pack_id == "":
@@ -512,34 +1139,83 @@ func pack_resource_exists(resource_path: String) -> bool:
 	return file.file_exists(resource_path)
 
 # Return all levels in the current map. The World API exposes these directly.
+# ============================================================================
+# SAFE WORLD / LEVEL ACCESS
+# ============================================================================
+
 func get_pack_levels(all_levels: bool = false) -> Array:
+	if Global == null:
+		return []
+
 	if Global.World == null:
 		return []
+
 	if all_levels:
-		return Global.World.levels
+		if not "levels" in Global.World:
+			return []
+
+		var levels = Global.World.levels
+
+		if levels == null:
+			return []
+
+		if not levels is Array:
+			return []
+
+		return levels
+
 	var current = Global.World.GetCurrentLevel()
+
 	if current == null:
 		return []
+
 	return [current]
 
 # Return all map nodes which can carry a texture resource path for one level.
 func get_map_texture_nodes_for_level(level) -> Array:
 	var nodes = []
+
 	if level == null:
 		return nodes
 
-	for node in level.Objects.get_children():
-		nodes.append([node, "objects"])
-	for node in level.Pathways.get_children():
-		nodes.append([node, "paths"])
-	for node in level.PatternShapes.GetShapes():
-		nodes.append([node, "pattern_shapes"])
-	for node in level.Walls.get_children():
-		nodes.append([node, "walls"])
-	for node in level.Portals.get_children():
-		nodes.append([node, "portals"])
-	for node in level.Roofs.get_children():
-		nodes.append([node, "roofs"])
+	# Objects
+	if level.Objects != null:
+		for node in level.Objects.get_children():
+			if node != null:
+				nodes.append([node, "objects"])
+
+	# Paths
+	if level.Pathways != null:
+		for node in level.Pathways.get_children():
+			if node != null:
+				nodes.append([node, "paths"])
+
+	# Pattern Shapes
+	if level.PatternShapes != null:
+		var shapes = level.PatternShapes.GetShapes()
+
+		if shapes != null:
+			for node in shapes:
+				if node != null:
+					nodes.append([node, "pattern_shapes"])
+
+	# Walls
+	if level.Walls != null:
+		for node in level.Walls.get_children():
+			if node != null:
+				nodes.append([node, "walls"])
+
+	# Portals
+	if level.Portals != null:
+		for node in level.Portals.get_children():
+			if node != null:
+				nodes.append([node, "portals"])
+
+	# Roofs
+	if level.Roofs != null:
+		for node in level.Roofs.get_children():
+			if node != null:
+				nodes.append([node, "roofs"])
 
 	return nodes
 
@@ -592,27 +1268,65 @@ func get_pack_map_entries(pack_id: String, all_levels: bool = false) -> Array:
 
 func get_all_pack_ids_in_map() -> Array:
 	var found = {}
-	for level in get_pack_levels(true):
+
+	var levels = get_pack_levels(true)
+
+	if levels.empty():
+		return []
+
+	for level in levels:
 		if level == null:
 			continue
-		for item in get_map_texture_nodes_for_level(level):
-			var texture = get_asset_texture(item[0], item[1])
+
+		var nodes = get_map_texture_nodes_for_level(level)
+
+		for item in nodes:
+			if item.size() < 2:
+				continue
+
+			var node = item[0]
+			var asset_type = item[1]
+
+			if node == null:
+				continue
+
+			var texture = get_asset_texture(node, asset_type)
+
 			if texture == null:
 				continue
-			var pack_id = get_pack_id_from_path(str(texture.resource_path))
+
+			var resource_path = str(texture.resource_path)
+
+			if resource_path == "":
+				continue
+
+			var pack_id = get_pack_id_from_path(resource_path)
+
 			if pack_id != "":
 				found[pack_id] = true
-		var terrain = level.Terrain
-		if terrain != null:
-			for texture in terrain.textures:
-				if texture == null:
-					continue
-				var terrain_pack_id = get_pack_id_from_path(str(texture.resource_path))
-				if terrain_pack_id != "":
-					found[terrain_pack_id] = true
+
+		# Terrain is not represented by normal map nodes.
+		if level.Terrain != null:
+			var terrain = level.Terrain
+
+			if terrain.textures != null:
+				for texture in terrain.textures:
+					if texture == null:
+						continue
+
+					var resource_path = str(texture.resource_path)
+
+					if resource_path == "":
+						continue
+
+					var terrain_pack_id = get_pack_id_from_path(resource_path)
+
+					if terrain_pack_id != "":
+						found[terrain_pack_id] = true
 
 	var result = found.keys()
 	result.sort()
+
 	return result
 
 func get_asset_pack_manifest() -> Array:
@@ -669,27 +1383,102 @@ func add_pack_dropdown_items(dropdown: OptionButton, ids: Array):
 		dropdown.add_item("%s — %s" % [pack_id, pack_name])
 		dropdown.set_item_metadata(dropdown.get_item_count() - 1, pack_id)
 
-func reload_pack_id_dropdown():
-	# PackID To contains all loaded asset packs because any loaded pack can be
-	# used as a replacement target.
+# ============================================================================
+# PACK DROPDOWN INITIALIZATION
+# ============================================================================
+func reload_pack_id_dropdown() -> void:
+	outputlog("reload_pack_id_dropdown", 0)
+
+	# -------------------------------------------------------------------------
+	# This function is UI/map discovery only.
+	#
+	# NEVER load a hash cache here.
+	# NEVER scan a pack here.
+	# NEVER call ensure_pack_hash_loaded() here.
+	# -------------------------------------------------------------------------
+
+	clear_pack_hash_cache()
+
+	# -------------------------------------------------------------------------
+	# Get loaded asset packs.
+	# -------------------------------------------------------------------------
+
 	pack_asset_catalog = get_asset_pack_catalog()
-	# PackID From / Inspect contains only PackIDs actually present in the map.
+
+	if pack_asset_catalog == null:
+		pack_asset_catalog = {}
+
+	# -------------------------------------------------------------------------
+	# Get PackIDs actually present in the current map.
+	# -------------------------------------------------------------------------
+
 	pack_found_ids = get_sorted_asset_pack_ids()
+
+	if pack_found_ids == null:
+		pack_found_ids = []
+
+	# -------------------------------------------------------------------------
+	# Populate destination dropdown.
+	# -------------------------------------------------------------------------
+
 	var loaded_ids = pack_asset_catalog.keys()
 	loaded_ids.sort()
 
-	add_pack_dropdown_items(pack_to_dropdown, loaded_ids)
-	add_pack_dropdown_items(pack_from_dropdown, pack_found_ids)
+	add_pack_dropdown_items(
+		pack_to_dropdown,
+		loaded_ids
+	)
+
+	# -------------------------------------------------------------------------
+	# Populate source dropdown.
+	# -------------------------------------------------------------------------
+
+	add_pack_dropdown_items(
+		pack_from_dropdown,
+		pack_found_ids
+	)
+
+	# -------------------------------------------------------------------------
+	# Select defaults.
+	# -------------------------------------------------------------------------
 
 	if pack_found_ids.size() > 0:
 		pack_from_dropdown.select(0)
-		set_pack_status("Found %d PackID(s) currently present in the map." % pack_found_ids.size())
+
+		set_pack_status(
+			"Found %d PackID(s) currently present in the map."
+			% pack_found_ids.size()
+		)
 	else:
-		set_pack_status("No PackID is currently present in the map.")
+		set_pack_status(
+			"No PackID is currently present in the map."
+		)
 
 	if loaded_ids.size() > 0:
-		pack_to_dropdown.select(0 if loaded_ids.size() == 1 else 1)
-	get_pack_map_size()
+		pack_to_dropdown.select(0)
+
+	# -------------------------------------------------------------------------
+	# IMPORTANT:
+	#
+	# There must be NO:
+	#
+	#     ensure_pack_hash_loaded()
+	#     load_hash_cache()
+	#     check_pack_hash_sync()
+	#     scan_pack_directory()
+	#
+	# in this function.
+	# -------------------------------------------------------------------------
+
+	update_pack_hash_status()
+
+	outputlog(
+		"reload_pack_id_dropdown completed. Loaded packs: "
+		+ str(loaded_ids.size())
+		+", map packs: "
+		+ str(pack_found_ids.size()),
+		0
+	)
 
 func get_dropdown_pack_id(dropdown: OptionButton) -> String:
 	if dropdown == null or dropdown.get_item_count() == 0:
@@ -878,7 +1667,6 @@ func add_pack_result_entry(text: String, tooltip: String, entry_group: Array):
 	pack_result_list.add_item(text)
 	pack_result_list.set_item_tooltip(index, tooltip)
 	pack_result_entries.append(entry_group)
-
 
 
 func get_pack_focus_pixels() -> float:
@@ -1424,10 +2212,10 @@ func compare_packs():
 	var pack_to = get_selected_pack_to_id()
 
 	if pack_from == "" or pack_to == "":
-		set_pack_status("Enter both PackID From and PackID To first.")
+		set_pack_status("Enter both PackID source and PackID destination first.")
 		return
 	if pack_from == pack_to:
-		set_pack_status("PackID From and PackID To must be different.")
+		set_pack_status("PackID source and PackID destination must be different.")
 		return
 
 	clear_pack_highlights()
@@ -1438,6 +2226,7 @@ func compare_packs():
 	var unique_sources = {}
 	var missing_count = 0
 	var matched_count = 0
+	var hash_match_count = 0
 
 	for entry in entries:
 		var key = get_pack_entry_key(entry)
@@ -1451,12 +2240,29 @@ func compare_packs():
 
 	var keys = unique_sources.keys()
 	keys.sort()
+
+	var target_cache = pack_hash_json_data.get(pack_to, {})
+	var target_assets = target_cache.get("assets", []) if target_cache is Dictionary else []
+	var can_hash_lookup = target_cache.size() > 0 and not target_cache.get("needs_rescan", false)
+
 	for key in keys:
 		var record = unique_sources[key]
 		var group = record["entries"]
 		var entry = group[0]
 		var target_path = record["target_path"]
 		record["matched"] = pack_resource_exists(target_path)
+
+		var matched_by_hash = false
+		if not record["matched"] and can_hash_lookup:
+			var source_hash = hash_file(entry["path"])
+			if source_hash != "":
+				for asset in target_assets:
+					if asset.get("hash", "") == source_hash:
+						target_path = asset["path"]
+						record["matched"] = true
+						matched_by_hash = true
+						hash_match_count += 1
+						break
 
 		if record["matched"]:
 			matched_count += 1
@@ -1468,8 +2274,9 @@ func compare_packs():
 				"to_is_colourable": get_node_colourable_state(entry["node"], entry["type"]),
 				"scale_multiplier": 1.0
 			})
+			var match_label = "MATCH (hash)" if matched_by_hash else "MATCH"
 			add_pack_result_entry(
-				"MATCH   [%s] x%d  %s" % [entry["type"], group.size(), entry["relative_path"]],
+				"%s   [%s] x%d  %s" % [match_label, entry["type"], group.size(), entry["relative_path"]],
 				target_path,
 				group
 			)
@@ -1488,10 +2295,8 @@ func compare_packs():
 				group
 			)
 
-	var scope_text = "all levels"
-	if not pack_scope_all_levels:
-		scope_text = "current level"
-	set_pack_status("%s -> %s: %d unique matches, %d missing. %d map instances checked (%s)." % [pack_from, pack_to, matched_count, missing_count, entries.size(), scope_text])
+	var scope_text = "all levels" if pack_scope_all_levels else "current level"
+	set_pack_status("%s -> %s: %d unique matches (%d by hash), %d missing. %d map instances checked (%s)." % [pack_from, pack_to, matched_count, hash_match_count, missing_count, entries.size(), scope_text])
 
 func get_node_colourable_state(node, type: String) -> bool:
 	if type == "objects" and node != null:
@@ -1576,7 +2381,6 @@ func execute_pack_replacements():
 
 # Function to add a new swap config to the current swap list
 func add_new_swap(save_after_add: bool = true):
-
 	outputlog("add_new_swap")
 
 	var type = ui_config["core"]["asset_type_button"].get_item_metadata(ui_config["core"]["asset_type_button"].selected)
@@ -1611,7 +2415,6 @@ func add_new_swap(save_after_add: bool = true):
 
 # Function to refresh the list label size
 func refresh_list_label_size():
-
 	var min_width = 0.0
 	var width
 
@@ -1620,25 +2423,23 @@ func refresh_list_label_size():
 		if min_width < width:
 			min_width = width
 	
-	ui_config["core"]["list_label"].rect_min_size = Vector2(min_width,ui_config["core"]["list_label"].rect_min_size.y)
+	ui_config["core"]["list_label"].rect_min_size = Vector2(min_width, ui_config["core"]["list_label"].rect_min_size.y)
 
 
 # Function to scale up or down the list_label size based on a swap size
 func update_list_label_size(swap):
-
 	# Wait two idle frames
 	timer.start(0.05)
-	yield(timer,"timeout")
+	yield (timer, "timeout")
 
-	outputlog("update_list_label_size: " + str(swap.get_width()),2)
+	outputlog("update_list_label_size: " + str(swap.get_width()), 2)
 
-	ui_config["core"]["list_label"].rect_min_size = Vector2(swap.get_width(),ui_config["core"]["list_label"].rect_min_size.y)
+	ui_config["core"]["list_label"].rect_min_size = Vector2(swap.get_width(), ui_config["core"]["list_label"].rect_min_size.y)
 
 
 # Function respond to a request to swap the texture which requires access to the UI
 func on_request_to_set_swap_texture(swap, target: TextureRect):
-
-	outputlog("on_request_to_set_swap_texture",2)
+	outputlog("on_request_to_set_swap_texture", 2)
 	var gridmenu = null
 	var texture_path
 
@@ -1674,7 +2475,7 @@ func on_request_to_set_swap_texture(swap, target: TextureRect):
 					match swap.type:
 						"objects":
 							# If the item is colourable, record that so we set that on migration
-							if gridmenu.get_item_icon_modulate(index) == Color(1.0,0.0,0.0,1.0):
+							if gridmenu.get_item_icon_modulate(index) == Color(1.0, 0.0, 0.0, 1.0):
 								swap.set_new_texture(target, texture_path, true)
 							else:
 								swap.set_new_texture(target, texture_path)
@@ -1695,7 +2496,6 @@ func on_request_to_set_swap_texture(swap, target: TextureRect):
 
 # Function to show hide the import menus
 func on_import_menu_button_toggled(button_pressed: bool):
-
 	export_import_vbox.visible = button_pressed
 
 	ui_config["core"]["swap_hbox"].visible = not button_pressed
@@ -1714,10 +2514,9 @@ func on_import_menu_button_toggled(button_pressed: bool):
 
 # Function to move the swap list to the right hand panel and opens the correct tool panel
 func move_swap_list(button_pressed: bool, open_tool: bool = false):
+	outputlog("move_swap_list: button_pressed: " + str(button_pressed) + " open_tool: " + str(open_tool), 2)
 
-	outputlog("move_swap_list: button_pressed: " + str(button_pressed) + " open_tool: " + str(open_tool),2)
-
-	var move_list = [swap_scroll,ui_config["core"]["list_label"],ui_config["core"]["add_button"]]
+	var move_list = [swap_scroll, ui_config["core"]["list_label"], ui_config["core"]["add_button"]]
 
 	# If we are moving the swap list
 	if button_pressed:
@@ -1742,17 +2541,16 @@ func move_swap_list(button_pressed: bool, open_tool: bool = false):
 			set_property_but_block_signals(ui_config["core"]["move_button"], "pressed", false)
 		panel.visible = false
 		if open_tool:
-			swap_list_location = "SwapAssets"
-			Global.Editor.Toolset.Quickswitch("SwapAssets")
+			swap_list_location = "AssetPackSwitcher"
+			Global.Editor.Toolset.Quickswitch("AssetPackSwitcher")
 	
-	outputlog("swap_list_location: " + str(swap_list_location),2)
+	outputlog("swap_list_location: " + str(swap_list_location), 2)
 
 # When the asset type dropdown is selected
 func on_asset_type_selected(index: int):
-
 	var type = ui_config["core"]["asset_type_button"].get_item_metadata(index)
 
-	outputlog("on_asset_type_selected: " + str(type),2)
+	outputlog("on_asset_type_selected: " + str(type), 2)
 
 	# Hide all specific UI
 	hide_asset_specific_ui()
@@ -1769,7 +2567,7 @@ func on_asset_type_selected(index: int):
 		# Reveal the move button
 		"pattern_shapes", "terrain", "walls", "portals":
 			ui_config["core"]["move_button"].visible = true
-			var image_path = "res://ui/icons/tools/" + split_camel_case(TOOL_TYPE_LOOKUP[type]).replace(" ","_").to_lower().replace("portal","door") + ".png" 
+			var image_path = "res://ui/icons/tools/" + split_camel_case(TOOL_TYPE_LOOKUP[type]).replace(" ", "_").to_lower().replace("portal", "door") + ".png"
 			ui_config["core"]["move_button"].icon = ResourceLoader.load(image_path)
 	
 	# Load the right data into the UI
@@ -1778,7 +2576,6 @@ func on_asset_type_selected(index: int):
 
 # Hide the specific ui for each type
 func hide_asset_specific_ui():
-
 	# Hide all specific UI
 	tags_panel.visible = false
 	Global.Editor.ObjectLibraryPanel.visible = false
@@ -1794,8 +2591,7 @@ func hide_asset_specific_ui():
 
 # Function to get the data from the swap list
 func get_data_from_current_swap_list():
-
-	outputlog("get_data_from_current_swap_list",2)
+	outputlog("get_data_from_current_swap_list", 2)
 
 	var list = []
 	# For each swap value in the swap vbox
@@ -1806,8 +2602,7 @@ func get_data_from_current_swap_list():
 
 # Respond to a request from the presets to call the presetsdropdown with the current UI's values so it will save the data
 func save_current_preset_values():
-
-	outputlog("save_current_preset_values",2)
+	outputlog("save_current_preset_values", 2)
 
 	# Get the current data from this preset
 	var data = presetsdropdown.get_current_preset_data()
@@ -1816,7 +2611,7 @@ func save_current_preset_values():
 	if data == null:
 		data = DEFAULT_PRESET_DATA.duplicate(true)
 
-	outputlog("data: " + str(data),2)
+	outputlog("data: " + str(data), 2)
 	# Set the right data element from the current swap list
 	data[ui_config["core"]["asset_type_button"].get_item_metadata(ui_config["core"]["asset_type_button"].selected)] = get_data_from_current_swap_list()
 	# Remove duplicate assignments before persisting.
@@ -1826,8 +2621,7 @@ func save_current_preset_values():
 
 # Respond to a request from the presets dropdown to load the data into the swap ui
 func load_preset_values_into_ui(data):
-
-	outputlog("load_preset_values_into_ui: " + str(data),2)
+	outputlog("load_preset_values_into_ui: " + str(data), 2)
 
 	if data == null: return
 
@@ -1845,12 +2639,10 @@ func load_preset_values_into_ui(data):
 
 # Function to respond when a new group is selected
 func on_group_selected(group_name: String):
-
 	ui_config["core"]["group_name_label"].text = "Swap Group: " + group_name
 
 # Function to respond when the preset group button is toggled, ie to show or hide details for swaps.
 func on_presets_group_button_toggled(button_pressed: bool):
-
 	ui_config["core"]["asset_type_hbox"].visible = not button_pressed
 	ui_config["core"]["add_button"].visible = not button_pressed
 	ui_config["core"]["list_label"].visible = not button_pressed
@@ -1867,7 +2659,6 @@ func on_presets_group_button_toggled(button_pressed: bool):
 
 # Function to cover if the back button is pressed, which saves the content before going back to the main swap page
 func on_back_button_pressed():
-
 	# save the current data 
 	save_current_preset_values()
 	# return to the swap assets location
@@ -1880,7 +2671,6 @@ func on_back_button_pressed():
 #########################################################################################################
 
 func make_swap_assets_ui():
-
 	outputlog("make_swap_assets_ui")
 
 	ui_config["core"]["import_button"] = Button.new()
@@ -1899,24 +2689,47 @@ func make_swap_assets_ui():
 	var pack_separator = HSeparator.new()
 	tool_panel.Align.add_child(pack_separator)
 
-	var pack_title = Label.new()
-	pack_title.text = "Pack Inspection / Replacement"
-	tool_panel.Align.add_child(pack_title)
+	#var pack_title = Label.new()
+	#pack_title.text = "Pack Inspection / Replacement"
+	#tool_panel.Align.add_child(pack_title)
 
 	# Target pack comes first because it is the destination for generated replacements.
 	var pack_to_label = Label.new()
-	pack_to_label.text = "PackID To"
+	pack_to_label.text = "DESTINATION PackID"
 	tool_panel.Align.add_child(pack_to_label)
 
 	pack_to_dropdown = OptionButton.new()
 	pack_to_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pack_to_dropdown.hint_tooltip = "Loaded asset pack to replace with."
-	pack_to_dropdown.connect("item_selected", self, "on_pack_dropdown_selected")
+	#pack_to_dropdown.connect("item_selected", self, "on_pack_dropdown_selected")
+	pack_to_dropdown.connect("item_selected", self, "on_pack_to_dropdown_selected")
 	tool_panel.Align.add_child(pack_to_dropdown)
+
+	# -------------------------------------------------------------------------
+	# Hash cache status and explicit rescan controls
+	# -------------------------------------------------------------------------
+	var pack_hash_status_hbox = HBoxContainer.new()
+	pack_hash_status_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	pack_hash_status_label = Label.new()
+	pack_hash_status_label.text = " Destination PackID: not selected"
+	pack_hash_status_label.autowrap = true
+	pack_hash_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pack_hash_status_hbox.add_child(pack_hash_status_label)
+
+	pack_rescan_button = Button.new()
+	pack_rescan_button.text = "Rescan"
+	pack_rescan_button.hint_tooltip = "Explicitly rescan the PackID destination assets and rebuild the hash cache. This takes time! Be patient."
+	pack_rescan_button.icon = safe_load_texture(Global.Root + "icons/reload.png")
+	pack_rescan_button.connect("pressed", self, "on_pack_rescan_pressed")
+	pack_hash_status_hbox.add_child(pack_rescan_button)
+
+	tool_panel.Align.add_child(pack_hash_status_hbox)
 
 	# One scope selector is shared by Find & Highlight and Generate Replacements.
 	var pack_scope_hbox = HBoxContainer.new()
 	var pack_reload_button = Button.new()
+	pack_reload_button.icon = safe_load_texture(Global.Root + "icons/reloadsmall.png")
 	pack_reload_button.text = "Reload PackIDs"
 	pack_reload_button.hint_tooltip = "Reload the PackID lists after saving or loading a map."
 	pack_reload_button.connect("pressed", self, "reload_pack_id_dropdown")
@@ -1932,7 +2745,7 @@ func make_swap_assets_ui():
 
 	var pack_focus_label = Label.new()
 	pack_focus_label.text = "Focus px"
-	pack_focus_label.hint_tooltip = "Target displayed size. The larger asset dimension occupies approximately this many screen pixels."
+	pack_focus_label.hint_tooltip = "Assets selected occupy approximately this many screen pixels squared. Zoom will be adjusted accordingly."
 	pack_scope_hbox.add_child(pack_focus_label)
 
 	pack_focus_pixel_spinbox = SpinBox.new()
@@ -1990,14 +2803,15 @@ func make_swap_assets_ui():
 
 	tool_panel.Align.add_child(pack_map_size_override_hbox)
 
-	pack_map_size_status_label = Label.new()
-	pack_map_size_status_label.text = "Map size will be determined when focusing a result."
-	pack_map_size_status_label.autowrap = true
-	tool_panel.Align.add_child(pack_map_size_status_label)
+	#pack_map_size_status_label = Label.new()
+	#pack_map_size_status_label.text = "Map size will be determined when focusing a result."
+	#pack_map_size_status_label.autowrap = true
+	#tool_panel.Align.add_child(pack_map_size_status_label)
+
 
 	# Source pack / inspection selector. It is restricted to PackIDs actually present in the map.
 	var pack_from_label = Label.new()
-	pack_from_label.text = "PackID From / Inspect"
+	pack_from_label.text = "SOURCE PackID / Map asset inspection"
 	tool_panel.Align.add_child(pack_from_label)
 
 	pack_from_dropdown = OptionButton.new()
@@ -2009,13 +2823,15 @@ func make_swap_assets_ui():
 	var pack_find_generate_hbox = HBoxContainer.new()
 	var pack_inspect_button = Button.new()
 	pack_inspect_button.text = "Find & Highlight"
+	pack_inspect_button.icon = safe_load_texture(Global.Root + "icons/magnifying-glass.png")
 	pack_inspect_button.hint_tooltip = "Find all assets from the selected PackID using the selected level scope."
 	pack_inspect_button.connect("pressed", self, "inspect_pack")
 	pack_find_generate_hbox.add_child(pack_inspect_button)
 
 	var pack_compare_button = Button.new()
 	pack_compare_button.text = "Generate Replacements"
-	pack_compare_button.hint_tooltip = "Generate mappings by replacing PackID From with PackID To while keeping the relative asset path unchanged. Missing targets are highlighted."
+	pack_compare_button.icon = safe_load_texture(Global.Root + "icons/reverse-icon-green.png")
+	pack_compare_button.hint_tooltip = "Generate mappings by replacing PackID source assets with PackID destination assets while keeping the relative asset path unchanged. Missing targets are highlighted."
 	pack_compare_button.connect("pressed", self, "compare_packs")
 	pack_find_generate_hbox.add_child(pack_compare_button)
 	tool_panel.Align.add_child(pack_find_generate_hbox)
@@ -2023,12 +2839,14 @@ func make_swap_assets_ui():
 	var pack_action_hbox = HBoxContainer.new()
 	var pack_clear_button = Button.new()
 	pack_clear_button.text = "Clear Selection"
+	pack_clear_button.icon = safe_load_texture(Global.Root + "icons/cancel.png")
 	pack_clear_button.hint_tooltip = "Deselect and remove highlighting from all asset instances on all levels."
 	pack_clear_button.connect("pressed", self, "clear_pack_highlights")
 	pack_action_hbox.add_child(pack_clear_button)
 
 	var pack_execute_button = Button.new()
 	pack_execute_button.text = "Execute Generated Replacements"
+	pack_execute_button.icon = safe_load_texture(Global.Root + "icons/execute.png")
 	pack_execute_button.hint_tooltip = "Replace every matching asset using the generated pack mappings and selected level scope."
 	pack_execute_button.connect("pressed", self, "execute_pack_replacements")
 	pack_action_hbox.add_child(pack_execute_button)
@@ -2060,18 +2878,19 @@ func make_swap_assets_ui():
 	var pack_swap_action_hbox = HBoxContainer.new()
 	var pack_add_swap_button = Button.new()
 	pack_add_swap_button.text = "Add Swap"
+	pack_add_swap_button.icon = safe_load_texture(Global.Root + "icons/plus-diamond.png")
 	pack_add_swap_button.hint_tooltip = "Add the selected result entry to the current Swap List, if its asset type matches the selected Swap List type."
 	pack_add_swap_button.connect("pressed", self, "add_pack_swap_entry")
 	pack_swap_action_hbox.add_child(pack_add_swap_button)
 
 	var pack_add_all_swap_button = Button.new()
 	pack_add_all_swap_button.text = "Add all to Swap"
+	pack_add_all_swap_button.icon = safe_load_texture(Global.Root + "icons/plus-circle.png")
 	pack_add_all_swap_button.hint_tooltip = "Add all displayed results of the currently selected Swap List asset type."
 	pack_add_all_swap_button.connect("pressed", self, "add_all_pack_results_to_swap")
 	pack_swap_action_hbox.add_child(pack_add_all_swap_button)
 	tool_panel.Align.add_child(pack_swap_action_hbox)
 
-	reload_pack_id_dropdown()
 
 	# Make the button for implementing the asset swap
 	ui_config["core"]["swap_button"] = Button.new()
@@ -2097,9 +2916,9 @@ func make_swap_assets_ui():
 	ui_config["core"]["asset_type_button"].size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for type in ASSET_TYPES.keys():
 		ui_config["core"]["asset_type_button"].add_item(type)
-		ui_config["core"]["asset_type_button"].set_item_metadata(ui_config["core"]["asset_type_button"].get_item_count()-1, ASSET_TYPES[type])
+		ui_config["core"]["asset_type_button"].set_item_metadata(ui_config["core"]["asset_type_button"].get_item_count() - 1, ASSET_TYPES[type])
 	
-	ui_config["core"]["asset_type_button"].connect("item_selected",self,"on_asset_type_selected")
+	ui_config["core"]["asset_type_button"].connect("item_selected", self, "on_asset_type_selected")
 	ui_config["core"]["asset_type_label"] = Label.new()
 	ui_config["core"]["asset_type_label"].text = "Asset Type"
 	ui_config["core"]["asset_type_hbox"] = HBoxContainer.new()
@@ -2112,12 +2931,13 @@ func make_swap_assets_ui():
 	ui_config["core"]["move_button"].text = "Open Tool"
 	ui_config["core"]["move_button"].hint_tooltip = "Open tool to select assets and moves swap list to right hand panel"
 	ui_config["core"]["move_button"].toggle_mode = true
-	ui_config["core"]["move_button"].connect("toggled", self, "move_swap_list",[true])
+	ui_config["core"]["move_button"].connect("toggled", self, "move_swap_list", [true])
 	tool_panel.Align.add_child(ui_config["core"]["move_button"])
 
 	# Create a button to add new swaps
 	ui_config["core"]["add_button"] = Button.new()
 	ui_config["core"]["add_button"].text = "Add New Swap"
+	ui_config["core"]["add_button"].icon = safe_load_texture(Global.Root + "icons/plus-badge.png")
 	ui_config["core"]["add_button"].connect("pressed", self, "add_new_swap")
 	tool_panel.Align.add_child(ui_config["core"]["add_button"])
 
@@ -2135,7 +2955,7 @@ func make_swap_assets_ui():
 	swap_scroll.add_child(swap_vbox)
 	swap_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	swap_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	swap_scroll.rect_min_size = Vector2(0,64)
+	swap_scroll.rect_min_size = Vector2(0, 64)
 
 	tool_panel.Align.add_child(swap_scroll)
 
@@ -2145,12 +2965,11 @@ func make_swap_assets_ui():
 
 	tags_panel = tool_panel.CreateTagsPanel()
 
-	swap_list_location = "SwapAssets"
+	swap_list_location = "AssetPackSwitcher"
 
 # Sets up the UI for our tree to live in
 func setup_panel():
-
-	outputlog("setup_panel",2)
+	outputlog("setup_panel", 2)
 	# The PanelContainer styling is a bit of a mystery to me - the below is the result of a lot of
 	# trial and error.
 	panel = PanelContainer.new()
@@ -2172,7 +2991,7 @@ func setup_panel():
 
 	# Create an area where you can drag to resize the panel
 	var resize_vbox = VBoxContainer.new()
-	resize_vbox.rect_min_size = Vector2(5,0)
+	resize_vbox.rect_min_size = Vector2(5, 0)
 	resize_vbox.mouse_default_cursor_shape = Control.CURSOR_HSIZE
 	resize_vbox.connect("gui_input", self, "on_panel_size_drag_management")
 	sub_hbox.add_child(resize_vbox)
@@ -2198,7 +3017,7 @@ func setup_panel():
 
 	var back_button = Button.new()
 	back_button.icon = load("res://ui/icons/buttons/back.png")
-	back_button.hint_tooltip = "Save group and return to SwapAssets mod tool."
+	back_button.hint_tooltip = "Save group and return to AssetPackSwitcher mod tool."
 	back_button.connect("pressed", self, "on_back_button_pressed")
 	box.add_child(back_button)
 	panel.visible = false
@@ -2207,15 +3026,14 @@ func setup_panel():
 
 # Function to respond when panel drag is active
 func on_panel_size_drag_management(event: InputEvent):
-
-	outputlog("on_panel_size_drag_management",2)
+	outputlog("on_panel_size_drag_management", 2)
 
 	if Input.is_mouse_button_pressed(BUTTON_LEFT):
 		var scale_factor = OS.get_screen_dpi() / 96.0
 		var min_x_size = 150.0 * scale_factor
 		var local_mouse_pos = panel.get_local_mouse_position()
 		if Global.Editor.content.rect_size.x > 60 || local_mouse_pos.x > 0.0:
-			panel.set_custom_minimum_size(Vector2(max(panel.get_custom_minimum_size().x-local_mouse_pos.x,min_x_size),0))
+			panel.set_custom_minimum_size(Vector2(max(panel.get_custom_minimum_size().x - local_mouse_pos.x, min_x_size), 0))
 
 #########################################################################################################
 ##
@@ -2225,8 +3043,7 @@ func on_panel_size_drag_management(event: InputEvent):
 
 # Function to purge the history records until we reach the record passed to this function
 func purge_history_back_to_record(record):
-
-	outputlog("purge_history_back_to_record: " + str(record),2)
+	outputlog("purge_history_back_to_record: " + str(record), 2)
 
 	var count = 0
 	# We need to make a reference to the History object otherwise we can't reassign values for some reason
@@ -2243,17 +3060,17 @@ func purge_history_back_to_record(record):
 
 	# Whie we haven't reached the record we are looking for yet.
 	while copy_history.size() > 0:
-		outputlog("history: " + str(copy_history),2)
-		outputlog("bookmark: " + str(bookmark),2)
+		outputlog("history: " + str(copy_history), 2)
+		outputlog("bookmark: " + str(bookmark), 2)
 		if count > 100:
 			break
 		# Check if the last record is not the one we are looking for and delete it
 		if copy_history[-1] != record:
-			outputlog("removing history record: " + str(copy_history[-1]),2)
+			outputlog("removing history record: " + str(copy_history[-1]), 2)
 			# Delete that record
 			copy_history.pop_back()
 			# Decrement the bookmark
-			bookmark -= 1	
+			bookmark -= 1
 		# Otherwise we are done so break
 		else:
 			break
@@ -2264,11 +3081,10 @@ func purge_history_back_to_record(record):
 
 # Get the one of the most recent history record
 func get_history_record_from_end(index_from_end: int = 0):
-
-	outputlog("get_last_history_record",2)
+	outputlog("get_last_history_record", 2)
 
 	if Global.Editor.History.history.size() > index_from_end:
-		return Global.Editor.History.history[Global.Editor.History.history.size()-1-index_from_end]
+		return Global.Editor.History.history[Global.Editor.History.history.size() - 1 - index_from_end]
 	else:
 		return null
 
@@ -2280,94 +3096,376 @@ func get_history_record_from_end(index_from_end: int = 0):
 #########################################################################################################
 
 func on_tool_enable(tool_id):
-
-	outputlog("on_tool_enable",2)
+	outputlog("on_tool_enable", 2)
 
 	# Note that this call reloads the data so we need to save if we have moved location
 	on_asset_type_selected(ui_config["core"]["asset_type_button"].selected)
 
 func on_tool_launched(tool_type):
-
 	var visible = false
 
-	if tool_type == "SwapAssets":
+	if tool_type == "AssetPackSwitcher":
 		visible = tool_panel.visible
 	else:
-		visible = Global.Editor.Toolset.GetToolPanel(tool_type).visible
+		var other_panel = Global.Editor.Toolset.GetToolPanel(tool_type)
 
-	outputlog("on_tool_launched: " + str(tool_type) + " open: " + str(visible),2)
+		if other_panel != null:
+			visible = other_panel.visible
+
+	outputlog(
+		"on_tool_launched: " +
+		str(tool_type) +
+		" open: " +
+		str(visible),
+		2
+	)
 
 	if visible:
-		# If the intended location of the swap list is the tool that just opened, we are fine, otherwise move the list home
+		# --------------------------------------------------------
+		# The tool is now actually being opened.
+		#
+		# At this point a map is normally available.
+		# Reload only if the World is ready.
+		# --------------------------------------------------------
+		if tool_type == "AssetPackSwitcher":
+			call_deferred(
+				"safe_reload_pack_id_dropdown"
+			)
+
+		# If the intended location of the swap list is the tool
+		# that just opened, we are fine.
 		if swap_list_location != tool_type:
-			# Move the list home but don't open the swapassets tool
 			move_swap_list(false, false)
 
 	else:
-		# If we are not potentially moving from a SwapAssets tool to one of the RH tools then move the swap list home
-		if not (swap_list_location in RH_TOOL_TYPES && tool_type == "SwapAssets"):
-			# Move the list home but don't open the swapassets tool
+		if not (
+			swap_list_location in RH_TOOL_TYPES
+			and tool_type == "AssetPackSwitcher"
+		):
 			move_swap_list(false, false)
 
+func safe_reload_pack_id_dropdown() -> void:
+	# ------------------------------------------------------------
+	# This function is deliberately conservative.
+	#
+	# It may be called after the tool becomes visible but while
+	# Dungeondraft is still completing map initialization.
+	# ------------------------------------------------------------
+	if Global == null:
+		return
+
+	if Global.World == null:
+		outputlog(
+			"safe_reload_pack_id_dropdown: World not ready.",
+			2
+		)
+		return
+
+	# Make sure a current level can actually be obtained.
+	var current_level = Global.World.GetCurrentLevel()
+
+	if current_level == null:
+		outputlog(
+			"safe_reload_pack_id_dropdown: Current level not ready.",
+			2
+		)
+
+		# Do not touch map data.
+		return
+
+	reload_pack_id_dropdown()
+	
 # Main Script
 func start() -> void:
-
-	outputlog("SwapAssets Mod Has been loaded.")
+	outputlog("Asset Pack Switcher Mod Has been loaded.")
 
 	var category = "Effects"
-	var id = "SwapAssets"
+	var id = "AssetPackSwitcher"
 	var name = "Swap Assets"
-	
-	var icon = "res://ui/icons/tools/map_settings.png"
-	tool_panel = Global.Editor.Toolset.CreateModTool(self, category, id, name, icon)
-	tool_panel.Align.connect("visibility_changed", self, "on_tool_launched",[id])
 
+	var icon = "res://ui/icons/tools/map_settings.png"
+
+	# -------------------------------------------------------------------------
+	# Create the main Dungeondraft mod tool.
+	# -------------------------------------------------------------------------
+
+	tool_panel = Global.Editor.Toolset.CreateModTool(
+		self,
+		category,
+		id,
+		name,
+		icon
+	)
+
+	if tool_panel == null:
+		printerr("AssetPackSwitcher: CreateModTool returned null.")
+		return
+
+	outputlog("CreateModTool completed.", 0)
+
+	# Connect visibility signal.
+	tool_panel.Align.connect(
+		"visibility_changed",
+		self,
+		"on_tool_launched",
+		[id]
+	)
+
+	# Connect the other right-hand tools.
 	for tool_type in RH_TOOL_TYPES:
-		Global.Editor.Toolset.GetToolPanel(tool_type).connect("visibility_changed", self, "on_tool_launched",[tool_type])
+		var other_panel = Global.Editor.Toolset.GetToolPanel(tool_type)
+
+		if other_panel != null:
+			other_panel.connect(
+				"visibility_changed",
+				self,
+				"on_tool_launched",
+				[tool_type]
+			)
 
 	ui_config["core"] = {}
+
+	# -------------------------------------------------------------------------
+	# PHASE 1:
+	# Construct the UI ONLY.
+	#
+	# No map access.
+	# No PackID discovery.
+	# No hash cache.
+	# No directory scan.
+	# -------------------------------------------------------------------------
+
+	outputlog("Starting make_swap_assets_ui...", 0)
+
 	make_swap_assets_ui()
 
-	# Create presets class and ui
-	var PresetsDropdown = ResourceLoader.load(Global.Root + "PresetsDropdown.gd", "GDScript", true)
+	outputlog("make_swap_assets_ui completed.", 0)
+
+	# -------------------------------------------------------------------------
+	# PHASE 2:
+	# Create PresetsDropdown.
+	# -------------------------------------------------------------------------
+
+	var PresetsDropdown = ResourceLoader.load(
+		Global.Root + "PresetsDropdown.gd",
+		"GDScript",
+		true
+	)
+
+	if PresetsDropdown == null:
+		printerr("AssetPackSwitcher: Failed to load PresetsDropdown.gd.")
+		return
+
 	presetsdropdown = PresetsDropdown.new()
 
+	if presetsdropdown == null:
+		printerr("AssetPackSwitcher: Failed to instantiate PresetsDropdown.")
+		return
+
 	presetsdropdown.global = Global
-	presetsdropdown.unique_id = "uchideshi34.SwapAssets"
+	presetsdropdown.unique_id = "cepeu.AssetPackSwitcher"
 	presetsdropdown.has_default_preset_mode = true
 	presetsdropdown.allow_copy_group = true
-	presetsdropdown.preset_config_filename = "swapassets.json"
-	# Validate entries before PresetsDropdown exposes them to the Swap UI.
-	# Invalid/missing assignments are archived instead of being instantiated.
-	presetsdropdown.archive_is_valid_data = {"main_script": self, "is_valid_function": "validate_swap_config_data"}
-	presetsdropdown.make_presets_ui(tool_panel.Align, ui_config["core"]["add_button"].get_index())
-	presetsdropdown.connect("request_save_current_preset_values", self, "save_current_preset_values")
-	presetsdropdown.connect("load_preset_values", self, "load_preset_values_into_ui")
-	presetsdropdown.connect("group_selected", self, "on_group_selected")
-	# Load the current preset data file
+	presetsdropdown.preset_config_filename = "AssetPackSwitcher.json"
+
+	presetsdropdown.archive_is_valid_data = {
+		"main_script": self,
+		"is_valid_function": "validate_swap_config_data"
+	}
+
+	presetsdropdown.make_presets_ui(
+		tool_panel.Align,
+		ui_config["core"]["add_button"].get_index()
+	)
+
+	presetsdropdown.connect(
+		"request_save_current_preset_values",
+		self,
+		"save_current_preset_values"
+	)
+
+	presetsdropdown.connect(
+		"load_preset_values",
+		self,
+		"load_preset_values_into_ui"
+	)
+
+	presetsdropdown.connect(
+		"group_selected",
+		self,
+		"on_group_selected"
+	)
+
+	# Load preset data.
 	presetsdropdown._load_scatter_preset_config_file()
 
-	# Make export vbox
-	export_import_vbox = VBoxContainer.new()
-	tool_panel.Align.add_child(export_import_vbox)
-	presetsdropdown.make_presets_import_and_export_ui(export_import_vbox, -1)
-	presetsdropdown.show_preset_groups_button.connect("toggled", self, "on_presets_group_button_toggled")
+	# -------------------------------------------------------------------------
+	# Import / Export UI
+	# -------------------------------------------------------------------------
 
-	# Toggle the import view off
+	export_import_vbox = VBoxContainer.new()
+
+	if export_import_vbox == null:
+		printerr("AssetPackSwitcher: Failed to create export_import_vbox.")
+		return
+
+	tool_panel.Align.add_child(export_import_vbox)
+
+	presetsdropdown.make_presets_import_and_export_ui(
+		export_import_vbox,
+		-1
+	)
+
+	presetsdropdown.show_preset_groups_button.connect(
+		"toggled",
+		self,
+		"on_presets_group_button_toggled"
+	)
+
+	# Hide import menu initially.
 	on_import_menu_button_toggled(false)
+
 	hide_asset_specific_ui()
 
-	# Set up the right hand panel
+	# -------------------------------------------------------------------------
+	# Right-hand panel.
+	# -------------------------------------------------------------------------
+
+	outputlog("Starting setup_panel...", 0)
+
 	setup_panel()
 
-	# Initialise the store_swap_index at this position
+	outputlog("setup_panel completed.", 0)
+
+	# -------------------------------------------------------------------------
+	# Store swap index.
+	# -------------------------------------------------------------------------
+
 	store_swap_index = ui_config["core"]["add_button"].get_index()
+
+	# -------------------------------------------------------------------------
+	# Timer.
+	# -------------------------------------------------------------------------
 
 	timer = Timer.new()
 	timer.autostart = false
 	timer.one_shot = true
-	Global.Editor.get_node("Windows").add_child(timer)
 
+	var windows = Global.Editor.get_node("Windows")
+
+	if windows != null:
+		windows.add_child(timer)
+	else:
+		printerr("AssetPackSwitcher: Could not find Editor/Windows node.")
+
+	# -------------------------------------------------------------------------
+	# PHASE 3:
+	# IMPORTANT:
+	# Do NOT initialize PackIDs synchronously.
+	#
+	# Dungeondraft has now received the complete UI, but we still defer
+	# map/asset access by one idle frame.
+	# -------------------------------------------------------------------------
+
+	call_deferred(
+		"initialize_pack_ui"
+	)
+
+	outputlog("Asset Pack Switcher Mod initialization completed.", 0)
+
+func initialize_pack_ui() -> void:
+	outputlog("initialize_pack_ui", 0)
+
+	# -------------------------------------------------------------------------
+	# Validate the UI references before doing anything with the map.
+	# -------------------------------------------------------------------------
+
+	if tool_panel == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - tool_panel is null."
+		)
+		return
+
+	if pack_to_dropdown == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - pack_to_dropdown is null."
+		)
+		return
+
+	if pack_from_dropdown == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - pack_from_dropdown is null."
+		)
+		return
+
+	if pack_hash_status_label == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - pack_hash_status_label is null."
+		)
+		return
+
+	if pack_rescan_button == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - pack_rescan_button is null."
+		)
+		return
+
+	# -------------------------------------------------------------------------
+	# World may not be available yet.
+	#
+	# Do NOT force it.
+	# A later "Reload PackIDs" can initialize the lists manually.
+	# -------------------------------------------------------------------------
+
+	if Global == null:
+		printerr(
+			"AssetPackSwitcher: initialize_pack_ui aborted - Global is null."
+		)
+		return
+
+	if Global.World == null:
+		outputlog(
+			"initialize_pack_ui: World is not ready. "
+			+"PackID lists will remain empty until Reload PackIDs is pressed.",
+			0
+		)
+
+		update_pack_hash_status()
+		return
+
+	var current_level = Global.World.GetCurrentLevel()
+
+	if current_level == null:
+		outputlog(
+			"initialize_pack_ui: Current level is not ready. "
+			+"PackID lists will remain empty until Reload PackIDs is pressed.",
+			0
+		)
+
+		update_pack_hash_status()
+		return
+
+	# -------------------------------------------------------------------------
+	# World is ready.
+	#
+	# Now it is safe to inspect PackIDs.
+	#
+	# IMPORTANT:
+	# reload_pack_id_dropdown() itself must NOT load/synchronize hashes.
+	# -------------------------------------------------------------------------
+
+	outputlog(
+		"initialize_pack_ui: World and current level are ready.",
+		0
+	)
+
+	reload_pack_id_dropdown()
+
+	outputlog(
+		"initialize_pack_ui: PackID dropdown initialization completed.",
+		0
+	)
+	
 #########################################################################################################
 ##
 ## SWAP CONTROLLER CLASS
@@ -2375,7 +3473,6 @@ func start() -> void:
 #########################################################################################################
 
 class SwapController extends HBoxContainer:
-
 	var from_texturerect = null
 	var to_texturerect = null
 	#var hbox = null
@@ -2390,22 +3487,21 @@ class SwapController extends HBoxContainer:
 	signal move_location
 	signal deleted
 
-	var THUMBNAIL_SIZE = {"objects": Vector2(64,64), "paths": Vector2(64,256)}
+	var THUMBNAIL_SIZE = {"objects": Vector2(64, 64), "paths": Vector2(64, 256)}
 
 	const ENABLE_LOGGING = true
 	const LOGGING_LEVEL = 2
 
-	func outputlog(msg,level=0):
+	func outputlog(msg, level = 0):
 		if ENABLE_LOGGING:
 			if level <= LOGGING_LEVEL:
-				printraw("(%d) <SwapAssets-SwapController>: " % OS.get_ticks_msec())
+				printraw("(%d) <AssetPackSwitcher-SwapController>: " % OS.get_ticks_msec())
 				print(msg)
 		else:
 			pass
 
 	# Function to create a hbox with entries for swapping assets over
 	func _init(root_dir, vbox: VBoxContainer, position: int = -1):
-
 		self.size_flags_horizontal = 3
 		self.rect_min_size = 500
 
@@ -2459,11 +3555,10 @@ class SwapController extends HBoxContainer:
 		
 		vbox.add_child(self)
 		if not position < 0:
-			vbox.move_child(self,position)
+			vbox.move_child(self, position)
 
 	# Function to get the size of the hbox
 	func get_width():
-
 		var width = 0.0
 
 		for control in self.get_children():
@@ -2475,14 +3570,12 @@ class SwapController extends HBoxContainer:
 
 	# Called when the set button is pressed
 	func on_setbutton_pressed(target: TextureRect):
-
-		outputlog("on_setbutton_pressed" + str(target),2)
+		outputlog("on_setbutton_pressed" + str(target), 2)
 
 		self.emit_signal("set_to_new_value", self, target)
 
 	# Function to set the swap config value based on a texture path
 	func set_new_texture(target_texturerect: TextureRect, texture_path: String, is_colourable: bool = false):
-
 		var texture
 
 		# Check if texture path is usable in the map pack
@@ -2502,7 +3595,6 @@ class SwapController extends HBoxContainer:
 
 	# Function to set values from a config definition
 	func set_from_config(definition: Dictionary):
-
 		if definition.has("from_texture_path"):
 			if definition.has("from_is_colourable"):
 				set_new_texture(from_texturerect, definition["from_texture_path"], definition["from_is_colourable"])
@@ -2520,8 +3612,7 @@ class SwapController extends HBoxContainer:
 
 	# Function to return a definiion
 	func get_definition():
-
-		var definition = { "from_texture_path": "", "from_is_colourable": false, "to_texture_path": "", "to_is_colourable": false, "scale_multiplier": 1.0}
+		var definition = {"from_texture_path": "", "from_is_colourable": false, "to_texture_path": "", "to_is_colourable": false, "scale_multiplier": 1.0}
 
 		if from_texturerect.has_meta("store_texture_path"): definition["from_texture_path"] = from_texturerect.get_meta("store_texture_path")
 		if from_texturerect.has_meta("is_colourable"):
@@ -2541,14 +3632,12 @@ class SwapController extends HBoxContainer:
 	
 	# Function to delete a swap config entry
 	func delete():
-
 		self.get_parent().remove_child(self)
 		self.emit_signal("deleted")
 		self.queue_free()
 	
 	# Function to return the thumbnail url from a resource path
 	func find_thumbnail_url(resource_path: String):
-
 		var thumbnail_extension = ".png"
 		var thumbnail_url
 
@@ -2562,7 +3651,6 @@ class SwapController extends HBoxContainer:
 
 	# Function to return the texture of the thumbnail based on the core texture's resource path
 	func return_thumbnail_texture(resource_path: String):
-
 		var texture
 		var thumbnail_url = find_thumbnail_url(resource_path)
 		if ResourceLoader.exists(thumbnail_url):
@@ -2597,27 +3685,25 @@ class SwapController extends HBoxContainer:
 #########################################################################################################
 
 class SwapColourController extends HBoxContainer:
-
 	var from_colourbutton = null
 	var to_colourbutton = null
 	var type = "objects"
 
-	const LIGHT_PRESETS = ["ffeccd8b","ffeaefca","ff80beff","ffffad58","ff4dd569","ffeb8bec","ffffffff"]
+	const LIGHT_PRESETS = ["ffeccd8b", "ffeaefca", "ff80beff", "ffffad58", "ff4dd569", "ffeb8bec", "ffffffff"]
 
 	const ENABLE_LOGGING = true
 	const LOGGING_LEVEL = 2
 
-	func outputlog(msg,level=0):
+	func outputlog(msg, level = 0):
 		if ENABLE_LOGGING:
 			if level <= LOGGING_LEVEL:
-				printraw("(%d) <SwapAssets-SwapColourController>: " % OS.get_ticks_msec())
+				printraw("(%d) <AssetPackSwitcher-SwapColourController>: " % OS.get_ticks_msec())
 				print(msg)
 		else:
 			pass
 
 	# Function to create a hbox with entries for swapping assets over
 	func _init(root_dir, vbox: VBoxContainer, tool_panel, position: int = -1):
-
 		self.size_flags_horizontal = 3
 		self.rect_min_size = 500
 
@@ -2645,11 +3731,10 @@ class SwapColourController extends HBoxContainer:
 		
 		vbox.add_child(self)
 		if not position < 0:
-			vbox.move_child(self,position)
+			vbox.move_child(self, position)
 
 	# Function to set values from a config definition
 	func set_from_config(definition: Dictionary):
-
 		if definition.has("from_colour"):
 			from_colourbutton.color = Color(definition["from_colour"])
 		
@@ -2658,27 +3743,9 @@ class SwapColourController extends HBoxContainer:
 
 	# Function to return a definiion
 	func get_definition():
-
-		return {"from_colour": from_colourbutton.color.to_html(), "to_colour": to_colourbutton.color.to_html() }
+		return {"from_colour": from_colourbutton.color.to_html(), "to_colour": to_colourbutton.color.to_html()}
 	
 	# Function to delete a swap config entry
 	func delete():
-
 		self.get_parent().remove_child(self)
 		self.queue_free()
-
-
-
-
-
-
-
-
-	
-
-
-
-
-
-
-	
