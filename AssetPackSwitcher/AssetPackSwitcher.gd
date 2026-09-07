@@ -3199,8 +3199,24 @@ func safe_reload_pack_id_dropdown() -> void:
 
 	reload_pack_id_dropdown()
 	
+# Optional _lib integration for GitHub release checks and downloads.
+func register_update_checker() -> void:
+	if not Engine.has_signal("_lib_register_mod"):
+		return
+	Engine.emit_signal("_lib_register_mod", self)
+	if not "API" in Global:
+		return
+	if not Global.API.has("UpdateChecker"):
+		return
+	var uc = Global.API.UpdateChecker
+	uc.register(uc.builder()\
+		.fetcher(uc.github_fetcher("CePeU", "AssetPackSwitcher"))\
+		.downloader(uc.github_downloader("CePeU", "AssetPackSwitcher"))\
+		.build())
+
 # Main Script
 func start() -> void:
+	register_update_checker()
 	outputlog("Asset Pack Switcher Mod Has been loaded.")
 
 	var category = "Effects"

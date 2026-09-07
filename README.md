@@ -3,6 +3,8 @@
 
 This is a dungeondraft module based on uchideshi34(Jon) AssetSwap module.
 
+With `_lib` enabled and its UpdateChecker API available, AssetPackSwitcher registers for update checks and downloads from the GitHub releases of `CePeU/AssetPackSwitcher`. `_lib` is optional; the mod also works without it.
+
 It is so far also vibe coded but it works and does it job.   
 It is an early 1.0.0 version but it should work - more testing is underway.   
 
