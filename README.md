@@ -1,5 +1,5 @@
 ![GitHub Downloads (specific asset, latest release)](https://img.shields.io/github/downloads/CePeU/AssetPackSwitcher/latest/AssetPackSwitcher.zip)
-![GitHub Downloads (specific asset, latest release)](https://img.shields.io/github/downloads/CePeU/AssetPackSwitcher/latest/AssetPackSwitcher_1.0.1.zip)
+![GitHub Downloads (specific asset, latest release)](https://img.shields.io/github/downloads/CePeU/AssetPackSwitcher/latest/AssetPackSwitcher_1.2.0.zip)
 
 This is a dungeondraft module based on uchideshi34(Jon) AssetSwap module.
 
