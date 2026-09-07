@@ -2437,6 +2437,32 @@ func update_list_label_size(swap):
 	ui_config["core"]["list_label"].rect_min_size = Vector2(swap.get_width(), ui_config["core"]["list_label"].rect_min_size.y)
 
 
+# Resolve thumbnails back to the full asset path, never by dictionary order.
+func get_grid_asset_path(gridmenu, index: int) -> String:
+	var selected_path = str(gridmenu.Selected.resource_path)
+	if selected_path == "res://textures/ui/null.png":
+		return ""
+	if gridmenu.Lookup.has(selected_path):
+		return selected_path
+
+	# GridMenu.Selected can be a thumbnail. Its filename is the MD5 of
+	# the full asset path, which distinguishes identical assets across packs.
+	var icon = gridmenu.get_item_icon(index)
+	var icon_path = str(icon.resource_path) if icon != null else ""
+	for asset_path in gridmenu.Lookup.keys():
+		var thumbnail_name = str(asset_path).md5_text() + ".png"
+		if selected_path.get_file() == thumbnail_name or icon_path.get_file() == thumbnail_name:
+			return str(asset_path)
+
+	# Lookup values are menu indices; key insertion order is unrelated.
+	var matched_path = ""
+	for asset_path in gridmenu.Lookup.keys():
+		if gridmenu.Lookup[asset_path] == index:
+			if matched_path != "":
+				return ""
+			matched_path = str(asset_path)
+	return matched_path
+
 # Function respond to a request to swap the texture which requires access to the UI
 func on_request_to_set_swap_texture(swap, target: TextureRect):
 	outputlog("on_request_to_set_swap_texture", 2)
@@ -2462,25 +2488,23 @@ func on_request_to_set_swap_texture(swap, target: TextureRect):
 					gridmenu = Global.Editor.Tools["WallTool"].Controls["Texture"]
 				"portals":
 					gridmenu = Global.Editor.Tools["PortalTool"].Controls["Texture"]
-			if gridmenu.Selected != null:
-				if gridmenu.get_selected_items().size() > 0:
-					var index = gridmenu.get_selected_items()[0]
-					# If this is one of the pattern tool or portal tool and the first entry is the blank entry, then we need to move the index back one
-					if gridmenu.get_item_icon(0).resource_path == "res://textures/ui/null.png":
-						# If we have selected the blank texture then do nothing
-						if index == 0:
-							return
-						index -= 1
-					texture_path = gridmenu.Lookup.keys()[index]
-					match swap.type:
-						"objects":
-							# If the item is colourable, record that so we set that on migration
-							if gridmenu.get_item_icon_modulate(index) == Color(1.0, 0.0, 0.0, 1.0):
-								swap.set_new_texture(target, texture_path, true)
-							else:
-								swap.set_new_texture(target, texture_path)
-						_:
-							swap.set_new_texture(target, texture_path)
+			var selected_items = gridmenu.get_selected_items()
+			var selected_texture = gridmenu.Selected
+			if selected_texture == null or selected_items.size() == 0:
+				return
+			var index = selected_items[0]
+			var selected_icon = gridmenu.get_item_icon(index)
+			# Ignore the blank entry wherever it appears in the filtered menu.
+			if selected_icon != null and selected_icon.resource_path == "res://textures/ui/null.png":
+				return
+			texture_path = get_grid_asset_path(gridmenu, index)
+			if texture_path == "" or texture_path == "res://textures/ui/null.png":
+				Global.Editor.Warn("Swap Asset Selection", "Could not determine the selected asset's full path. Please select the asset again.")
+				return
+			var is_colourable = false
+			if swap.type == "objects":
+				is_colourable = gridmenu.get_item_icon_modulate(index) == Color(1.0, 0.0, 0.0, 1.0)
+			swap.set_new_texture(target, texture_path, is_colourable)
 			
 		"terrain":
 			var itemlist = Global.Editor.Tools["TerrainBrush"].terrainList
@@ -3576,14 +3600,12 @@ class SwapController extends HBoxContainer:
 
 	# Function to set the swap config value based on a texture path
 	func set_new_texture(target_texturerect: TextureRect, texture_path: String, is_colourable: bool = false):
-		var texture
-
-		# Check if texture path is usable in the map pack
-		var file = File.new()
-		if file.file_exists(texture_path) || ResourceLoader.load(texture_path):
-			target_texturerect.texture = return_thumbnail_texture(texture_path)
+		var texture = return_thumbnail_texture(texture_path)
+		# Keep the previous preview and mapping together if loading fails.
+		if texture != null:
+			target_texturerect.texture = texture
 			target_texturerect.set_meta("store_texture_path", texture_path)
-			target_texturerect.hint_tooltip = texture_path.split("/")[-1].split(".")[0].to_lower()
+			target_texturerect.hint_tooltip = texture_path
 			if type == "objects":
 				target_texturerect.set_meta("is_colourable", is_colourable)
 			return true
@@ -3644,22 +3666,34 @@ class SwapController extends HBoxContainer:
 		thumbnail_url = "user://.thumbnails/" + resource_path.md5_text() + thumbnail_extension
 
 		# Check if the thumbnail url is valid, if not create a thumbnail url for the embedded thumbnail
-		if not ResourceLoader.exists(thumbnail_url):
+		if not ResourceLoader.exists(thumbnail_url) and resource_path.begins_with("res://packs/") and resource_path.split('/').size() > 3:
 			thumbnail_url = "res://packs/" + resource_path.split('/')[3] + "/thumbnails/" + resource_path.md5_text() + thumbnail_extension
 
 		return thumbnail_url
 
 	# Function to return the texture of the thumbnail based on the core texture's resource path
 	func return_thumbnail_texture(resource_path: String):
-		var texture
+		var texture = null
 		var thumbnail_url = find_thumbnail_url(resource_path)
 		if ResourceLoader.exists(thumbnail_url):
 			texture = ResourceLoader.load(thumbnail_url)
+		if texture != null:
+			return texture
+
+		# Patterns and other assets may have no cached or embedded thumbnail.
+		# Build the preview from the exact asset, including its pack identity.
+		if ResourceLoader.exists(resource_path):
+			texture = ResourceLoader.load(resource_path)
 		else:
-			outputlog("Error in return_thumbnail_texture: no thumbnail found for this texture path - " + resource_path)
+			var img = Image.new()
+			if img.load(resource_path) == OK:
+				texture = ImageTexture.new()
+				texture.create_from_image(img, 0)
+		if texture == null:
+			outputlog("Could not load preview for texture path: " + resource_path)
 			return null
 
-		return texture
+		return resize_texture(texture, THUMBNAIL_SIZE.get(type, Vector2(64, 64)))
 
 	# Function to resize a texture to a fixed size
 	func resize_texture(tex: Texture, target_size: Vector2) -> Texture:
@@ -3668,9 +3702,15 @@ class SwapController extends HBoxContainer:
 
 		# Convert texture to Image
 		var img := tex.get_data()
+		if img == null or img.empty():
+			return null
+		if img.is_compressed():
+			if img.decompress() != OK:
+				return null
 
-		# Resize the image
-		img = img.resize(target_size.x, target_size.y, Image.INTERPOLATE_BILINEAR)
+		# Fit within the preview bounds without distorting the asset.
+		var preview_scale = min(target_size.x / img.get_width(), target_size.y / img.get_height())
+		img.resize(max(1, int(img.get_width() * preview_scale)), max(1, int(img.get_height() * preview_scale)), Image.INTERPOLATE_BILINEAR)
 
 		# Create a new texture from the resized image
 		var new_tex := ImageTexture.new()
