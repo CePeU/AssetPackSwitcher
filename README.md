@@ -16,6 +16,9 @@ So far the module compares the path and name of assets to find the corresponding
 
 You can also bulk swap assets.
 
+# Full documentation is found at:
+https://cepeu.github.com/AssetPackSwitcher
+
 # Usage
 
 You select a DESTINATION pack to which assets are switched to from the SOURCE pack. 

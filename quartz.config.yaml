@@ -7,7 +7,7 @@ configuration:
   # Site
   # --------------------------------------------------------------
 
-  pageTitle: "Meine Dokumentation"
+  pageTitle: "Asset Packe Switcher Documentation"
   pageTitleSuffix: ""
 
   # Enable Quartz SPA navigation.
