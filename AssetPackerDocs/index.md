@@ -1,3 +1,7 @@
+---
+title: Asset Pack Switcher
+---
+
 # What it does
 This is a dungeondraft module based on uchideshi34(Jon) AssetSwap module.
 
