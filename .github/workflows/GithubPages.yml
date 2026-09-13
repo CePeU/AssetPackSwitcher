@@ -114,7 +114,7 @@ jobs:
       # ------------------------------------------------------------
       - name: Build documentation
         working-directory: quartz
-        run: npx quartz build -d ../docs
+        run: npx quartz build -d ../AssetPackerDocs
 
       # ------------------------------------------------------------
       # 8. Upload generated site as GitHub Pages artifact
