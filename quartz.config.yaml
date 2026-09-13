@@ -1,0 +1,439 @@
+# ================================================================
+# Quartz 5 configuration
+# ================================================================
+
+configuration:
+  # --------------------------------------------------------------
+  # Site
+  # --------------------------------------------------------------
+
+  pageTitle: "Meine Dokumentation"
+  pageTitleSuffix: ""
+
+  # Enable Quartz SPA navigation.
+  enableSPA: true
+
+  # Show previews when hovering internal links.
+  enablePopovers: true
+
+  # No analytics.
+  analytics: null
+
+  # English locale for dates and UI where supported.
+  locale: en-EN
+
+  # --------------------------------------------------------------
+  # GitHub Pages URL
+  #
+  # Example:
+  #
+  #   username.github.io/my-documentation
+  #
+  # Do NOT include:
+  #
+  #   https://
+  #
+  # and do NOT add a trailing slash.
+  # --------------------------------------------------------------
+
+  baseUrl: "cepeu.github.io/AssetPackSwitcher"
+
+  # --------------------------------------------------------------
+  # Files/directories Quartz must never publish.
+  #
+  # These patterns are relative to docs/, because docs/ is passed
+  # to Quartz as the content directory.
+  # --------------------------------------------------------------
+
+  ignorePatterns:
+    - ".obsidian"
+    - ".trash"
+    - "private"
+    - "privat"
+    - "templates"
+
+  # --------------------------------------------------------------
+  # Theme
+  # --------------------------------------------------------------
+
+  theme:
+    fontOrigin: googleFonts
+    cdnCaching: true
+
+    typography:
+      header: Schibsted Grotesk
+      body: Source Sans Pro
+      code: IBM Plex Mono
+
+    colors:
+      lightMode:
+        light: "#fdfdfd"
+        lightgray: "#f1f1f1"
+        gray: "#d0d0d0"
+        darkgray: "#4a4a4a"
+        dark: "#2b2b2b"
+        secondary: "#284b63"
+        tertiary: "#506d84"
+        highlight: "rgba(143, 159, 169, 0.15)"
+        textHighlight: "#fff23688"
+
+      darkMode:
+        light: "#161618"
+        lightgray: "#393639"
+        gray: "#646464"
+        darkgray: "#d4d4d4"
+        dark: "#ebebec"
+        secondary: "#7b97aa"
+        tertiary: "#84a59d"
+        highlight: "rgba(143, 159, 169, 0.15)"
+        textHighlight: "#fff23688"
+
+
+# ================================================================
+# Plugins
+# ================================================================
+
+plugins:
+
+  # --------------------------------------------------------------
+  # Frontmatter / note properties
+  #
+  # Quartz 5's replacement for the old FrontMatter configuration.
+  # We parse properties, but don't display a properties table.
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/note-properties"
+    enabled: true
+    options:
+      includeAll: false
+      includedProperties:
+        - description
+        - tags
+        - aliases
+      excludedProperties: []
+      hidePropertiesView: true
+      delimiters: ---
+      language: yaml
+    order: 5
+    layout:
+      position: beforeBody
+      priority: 15
+      display: all
+
+
+  # --------------------------------------------------------------
+  # Created / modified dates
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/created-modified-date"
+    enabled: true
+    options:
+      defaultDateType: modified
+      priority:
+        - frontmatter
+        - git
+        - filesystem
+    order: 10
+
+
+  # --------------------------------------------------------------
+  # Syntax highlighting
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/syntax-highlighting"
+    enabled: true
+    options:
+      theme:
+        light: github-light
+        dark: github-dark
+      keepBackground: false
+    order: 20
+
+
+  # --------------------------------------------------------------
+  # Obsidian Markdown
+  #
+  # Provides support for Obsidian syntax such as:
+  #
+  #   [[Wiki Links]]
+  #   [[Page|Alias]]
+  #   [[Page#Heading]]
+  #   ![[image.png]]
+  #   callouts
+  #   checkboxes
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/obsidian-flavored-markdown"
+    enabled: true
+    options:
+      enableInHtmlEmbed: false
+      enableCheckbox: true
+    order: 30
+
+
+  # --------------------------------------------------------------
+  # GitHub-flavored Markdown
+  #
+  # Tables, task lists, strikethrough, etc.
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/github-flavored-markdown"
+    enabled: true
+    order: 40
+
+
+  # --------------------------------------------------------------
+  # Table of contents
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/table-of-contents"
+    enabled: true
+    order: 50
+    layout:
+      position: right
+      priority: 30
+
+
+  # --------------------------------------------------------------
+  # Resolve internal Markdown / Wiki links.
+  #
+  # "shortest" is appropriate for an Obsidian-style vault.
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/crawl-links"
+    enabled: true
+    options:
+      markdownLinkResolution: shortest
+    order: 60
+
+
+  # --------------------------------------------------------------
+  # Page descriptions / search text
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/description"
+    enabled: true
+    order: 70
+
+
+  # --------------------------------------------------------------
+  # LaTeX / mathematical notation
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/latex"
+    enabled: true
+    options:
+      renderEngine: katex
+    order: 80
+
+
+  # --------------------------------------------------------------
+  # Fonts
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/quartz-fonts"
+    enabled: true
+
+
+  # ==============================================================
+  # Publishing filters
+  # ==============================================================
+
+  # --------------------------------------------------------------
+  # Standard draft model:
+  #
+  #   draft: true
+  #
+  # causes a page to NOT be published.
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/remove-draft"
+    enabled: true
+
+
+  # --------------------------------------------------------------
+  # Optional safer publishing model.
+  #
+  # When enabled, ONLY pages containing:
+  #
+  #   publish: true
+  #
+  # are published.
+  #
+  # Disabled by default here so the behaviour matches the
+  # configuration we had before.
+  # --------------------------------------------------------------
+
+  - source: "@quartz-community/explicit-publish"
+    enabled: false
+
+
+  # ==============================================================
+  # Generated pages / indexes
+  # ==============================================================
+
+  # Redirects for aliases and renamed/case-normalized pages.
+  - source: "@quartz-community/alias-redirects"
+    enabled: true
+
+
+  # Site search index + sitemap.
+  - source: "@quartz-community/content-index"
+    enabled: true
+    options:
+      enableSiteMap: true
+      enableRSS: false
+
+
+  # Normal Markdown pages.
+  - source: "@quartz-community/content-page"
+    enabled: true
+
+
+  # Automatically generate pages for folders.
+  - source: "@quartz-community/folder-page"
+    enabled: true
+
+
+  # Generate tag pages.
+  - source: "@quartz-community/tag-page"
+    enabled: true
+
+
+  # ==============================================================
+  # User interface
+  # ==============================================================
+
+  # Left-hand file explorer.
+  - source: "@quartz-community/explorer"
+    enabled: true
+    layout:
+      position: left
+      priority: 50
+
+
+  # Graph view.
+  - source: "@quartz-community/graph"
+    enabled: true
+    layout:
+      position: right
+      priority: 10
+
+
+  # Search.
+  - source: "@quartz-community/search"
+    enabled: true
+    layout:
+      position: left
+      priority: 20
+      group: toolbar
+      groupOptions:
+        grow: true
+
+
+  # Backlinks.
+  - source: "@quartz-community/backlinks"
+    enabled: true
+    layout:
+      position: right
+      priority: 50
+
+
+  # Breadcrumbs.
+  - source: "@quartz-community/breadcrumbs"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 5
+      condition: not-index
+
+
+  # Page title displayed above note content.
+  - source: "@quartz-community/article-title"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 10
+
+
+  # Modified date / reading metadata.
+  - source: "@quartz-community/content-meta"
+    enabled: true
+    layout:
+      position: beforeBody
+      priority: 20
+
+
+  # Site title in sidebar.
+  - source: "@quartz-community/page-title"
+    enabled: true
+    layout:
+      position: left
+      priority: 10
+
+
+  # Dark/light mode button.
+  - source: "@quartz-community/darkmode"
+    enabled: true
+    layout:
+      position: left
+      priority: 30
+      group: toolbar
+
+
+  # Reader mode.
+  - source: "@quartz-community/reader-mode"
+    enabled: true
+    layout:
+      position: left
+      priority: 35
+      group: toolbar
+
+
+  # Spacer for mobile layout.
+  - source: "@quartz-community/spacer"
+    enabled: true
+    options: {}
+    order: 25
+    layout:
+      position: left
+      priority: 25
+      display: mobile-only
+
+
+# ================================================================
+# Layout
+# ================================================================
+
+layout:
+  groups:
+    toolbar:
+      priority: 35
+      direction: row
+      gap: 0.5rem
+
+  byPageType:
+
+    # Keep the 404 page minimal.
+    "404":
+      positions:
+        beforeBody: []
+        left: []
+        right: []
+
+    # Normal Markdown notes.
+    content: {}
+
+    # Folder pages don't need the reader-mode button or right panel.
+    folder:
+      exclude:
+        - reader-mode
+      positions:
+        right: []
+
+    # Same for tag pages.
+    tag:
+      exclude:
+        - reader-mode
+      positions:
+        right: []
