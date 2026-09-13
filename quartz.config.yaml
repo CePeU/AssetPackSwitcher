@@ -20,7 +20,7 @@ configuration:
   analytics: null
 
   # English locale for dates and UI where supported.
-  locale: en-EN
+  locale: en-US
 
   # --------------------------------------------------------------
   # GitHub Pages URL
